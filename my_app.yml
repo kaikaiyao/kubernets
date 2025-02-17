@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: my_app
+  name: my-app
   labels:
     eidf/user: $USER
 spec:
@@ -19,7 +19,7 @@ spec:
           persistentVolumeClaim:
             claimName: s2470447-infk8s-ws1
       containers:
-        - name: my_app
+        - name: my-app
           image: kaiyaoed/my_app:latest
           resources:
             limits:
@@ -28,5 +28,5 @@ spec:
               memory: "16Gi"        # Increase memory to 16Gi
           volumeMounts:
             - name: workspace
-              mountPath: /workspace  # Ensure this matches the saving path in your app's command
+              mountPath: /workspace  # Ensure this matches your saving path in your app's command
       restartPolicy: Never
