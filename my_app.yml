@@ -4,12 +4,14 @@ metadata:
   name: my-app
   labels:
     eidf/user: $USER
+    kueue.x-k8s.io/queue-name: s2470447-infk8s-user-queue
 spec:
   backoffLimit: 4
   template:
     metadata:
       labels:
         eidf/user: $USER
+        kueue.x-k8s.io/queue-name: s2470447-infk8s-user-queue
     spec:
       # Ensure the job runs on a GPU-enabled node (adjust label if needed)
       nodeSelector:
@@ -28,5 +30,5 @@ spec:
               memory: "16Gi"        # Increase memory to 16Gi
           volumeMounts:
             - name: workspace
-              mountPath: /workspace  # Ensure this matches your saving path in your app's command
+              mountPath: /workspace  # Must match the saving path in your app's command
       restartPolicy: Never
