@@ -32,10 +32,6 @@ ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
 ENV TORCH_EXTENSIONS_DIR=/workspace/torch_extensions
 RUN mkdir -p ${TORCH_EXTENSIONS_DIR} && chmod -R 777 ${TORCH_EXTENSIONS_DIR}
 
-# Clone repositories
-RUN git clone https://github.com/kaikaiyao/kubernets.git /workspace/kubernets \
-    && git clone https://github.com/NVlabs/stylegan2-ada-pytorch.git /workspace/kubernets/stylegan2-ada-pytorch
-
 # Install Python dependencies (including ninja==1.10.2)
 RUN pip install --no-cache-dir \
     ninja==1.10.2 \
@@ -54,6 +50,10 @@ RUN pip install --no-cache-dir \
     cryptography \
     lpips \
     imageio-ffmpeg==0.4.3
+
+# Clone repositories
+RUN git clone https://github.com/kaikaiyao/kubernets.git /workspace/kubernets \
+    && git clone https://github.com/NVlabs/stylegan2-ada-pytorch.git /workspace/kubernets/stylegan2-ada-pytorch
 
 # Pre-compile CUDA extensions during build
 RUN cd /workspace/kubernets/stylegan2-ada-pytorch \
