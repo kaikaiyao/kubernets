@@ -1,6 +1,6 @@
 # Running a Kubernetes Pod on EIDF Clusters
 
-This guide explains the process of building a Docker image on Windows, pushing it to your repository, and deploying a Kubernetes pod on the EIDF clusters. An appendix is also provided to clarify the machine relationships and SSH access setup.
+This guide explains the process of building a Docker image on Windows, pushing it to your repository, deploying a Kubernetes pod on the EIDF clusters, and managing the associated PersistentVolumeClaim (PVC). An appendix is provided to clarify machine relationships and SSH access setup.
 
 ---
 
@@ -20,7 +20,7 @@ This guide explains the process of building a Docker image on Windows, pushing i
    ```
 
 3. **Test the Built Image**  
-   To verify that the image is working correctly, run:  
+   To verify that the image works correctly, run:  
    ```powershell
    docker run -it --rm my_app /bin/bash
    ```
@@ -31,13 +31,13 @@ This guide explains the process of building a Docker image on Windows, pushing i
 
 ### 2.1 Creating the PersistentVolumeClaim (PVC)
 
-Create a PVC on your target Kubernetes machine (e.g., `eidf029` or `eidf108`) by using the following command. Replace `<PVCNAME>` and `<STORAGE>` with the appropriate values (the example uses the environment variables `$USER-ws1` and `250Gi`):
+Create a PVC on your target Kubernetes machine (e.g., `eidf029` or `eidf108`) using the following command. This example uses the environment variables `$USER-ws1` for the PVC name and `250Gi` for the storage request:
 
 ```bash
 kubectl create -f <(PVCNAME=$USER-ws1 STORAGE=250Gi envsubst < pvc.yml)
 ```
 
-The `pvc.yml` should look like this:
+Your `pvc.yml` should resemble:
 
 ```yaml
 apiVersion: v1
@@ -57,7 +57,7 @@ spec:
 
 ### 2.2 Creating the Pod
 
-Prepare your pod definition file `my_app.yml` (ensure the PVC name in the `claimName` field is correct):
+Prepare your pod definition file `my_app.yml` (ensure the PVC name in the `claimName` field matches your setup):
 
 ```yaml
 apiVersion: v1
@@ -88,7 +88,7 @@ spec:
   restartPolicy: Never
 ```
 
-Deploy the pod with the following command, which substitutes environment variables into the YAML file:
+Deploy the pod by substituting environment variables into the YAML file:
 
 ```bash
 WORKSPACE_PVC=$USER-ws1 envsubst < my_app.yml | kubectl create -f -
@@ -119,21 +119,55 @@ WORKSPACE_PVC=$USER-ws1 envsubst < my_app.yml | kubectl create -f -
 
 ---
 
+## 4. PVC Inspection and Cleanup
+
+### 4.1 Inspecting the PVC
+
+To inspect the output associated with your PVC (as per your school’s guide):
+
+1. **Start PVC Synchronization:**  
+   Bring up the synchronization process:
+   ```bash
+   kubectl pvcsync $USER-ws1 up
+   ```
+   *Wait until you see several lines of output ending with a message such as "... is listening on port ...". This may take a few seconds.*
+
+2. **Inspect the Output:**  
+   Once the sync is active, view the output file by running:
+   ```bash
+   kubectl exec -it $USER-ws1-rsync-backend -- cat /data/hello-world.out
+   ```
+
+3. **Shut Down the Rsync Backend:**  
+   After inspection, shut down the rsync backend pod:
+   ```bash
+   kubectl pvcsync $USER-ws1 down
+   ```
+
+### 4.2 Deleting the PVC
+
+When the PVC is no longer needed, delete it using:
+```bash
+kubectl delete pvc $USER-ws1
+```
+
+---
+
 ## Appendix: Machine Relationships and SSH Setup
 
 ### Overview
 
 - **Local Machine:**  
-  You operate from a Windows machine, where you build Docker images and manage SSH sessions.
+  You work from a Windows machine, where you build Docker images and manage SSH sessions.
 
 - **Clusters:**  
   Two clusters are available through the school's infrastructure:
   - **EIDF Cluster 107:** Accessible via `eidf107`
-  - **EIDF Cluster 029 (or infk8s):** Accessible via `eidf029`
+  - **EIDF Cluster 029 (infk8s):** Accessible via `eidf029`
 
 ### SSH Access Setup
 
-SSH into the clusters using a jump host through the following commands from your Windows machine. These commands use the jump host (`eidf-gateway.epcc.ed.ac.uk`) to access the target clusters:
+SSH into the clusters using a jump host from your Windows machine. The following commands use the jump host (`eidf-gateway.epcc.ed.ac.uk`) to access the target clusters:
 
 - **Accessing EIDF Cluster 107:**
   ```bash
@@ -147,13 +181,13 @@ SSH into the clusters using a jump host through the following commands from your
 
 ### Using MobaXTerm
 
-You have configured three tabs in MobaXTerm for ease of use:
+You have configured three tabs in MobaXTerm for convenience:
 - **Windows PowerShell Tab:** For local Docker image building and testing.
 - **EIDF107 Tab:** SSH session to the EIDF Cluster 107.
 - **EIDF029 Tab:** SSH session to the EIDF Cluster 029 (infk8s).
 
-When you open these tabs, they automatically connect to the corresponding machines.
+Each tab automatically connects to the corresponding machine.
 
 ### Two-Factor Authentication (TOTP)
 
-Upon establishing an SSH session, you might be prompted to input a one-time passcode (TOTP) from Microsoft Authenticator. This extra security step ensures secure access to the clusters.
+Upon establishing an SSH session, you may be prompted to enter a one-time passcode (TOTP) from Microsoft Authenticator, ensuring secure access to the clusters.
