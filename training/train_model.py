@@ -95,6 +95,8 @@ def train_model(
 
             # Save images during the first iteration
             if i == 0 or i == 99999:
+                # Ensure the saving path directory exists
+                os.makedirs(saving_path, exist_ok=True)
                 with PdfPages(os.path.join(saving_path, 'first_iteration_images.pdf')) as pdf:
                     fig, axes = plt.subplots(4, 8, figsize=(20, 12))  # 4 rows (Original x_M, Modified x_M, Original x_M_hat, Modified x_M_hat), 8 images each
                     fig.suptitle("First Iteration Images", fontsize=16)
