@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import statistics
+import math
 import matplotlib.pyplot as plt
 from utils.loss_functions import get_mse_loss, get_lpips_loss
 from utils.image_utils import enhance_contrast, constrain_image
@@ -23,6 +24,7 @@ def evaluate_model(
     mask_switch,
     seed_key,
     mask_threshold,
+    batch_size=8
 ):
     # Set models to evaluation mode
     gan_model.eval()
@@ -34,138 +36,146 @@ def evaluate_model(
     mse_loss = get_mse_loss()
     lpips_loss = get_lpips_loss(device)
 
-    # Initialize lists to store scores, labels, LPIPS losses, and max deltas
+    # Lists to store per-image values
     scores = []
     labels = []
     loss_lpips_all = []
-    max_deltas_all = []  # List to store max deltas for each image pair
+    max_deltas_all = []  # for max delta per image
+    plot_data = []  # to store images for plotting if needed
 
     # Initialize FID metric
     fid_metric = FrechetInceptionDistance().to(device)
 
-    # If plotting is enabled, set up the figure and axes
-    if plotting:
-        rows = num_images
-        cols = 3  # Original Image, Watermarked Image, Difference
-        fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(15, 5 * num_images))
-        if num_images == 1:
-            axes = np.expand_dims(axes, axis=0)  # Ensure axes is 2D even for single image
-        plt.subplots_adjust(wspace=0.3, hspace=0.3)
+    # Determine number of batches needed
+    num_batches = math.ceil(num_images / batch_size)
 
-    for i in range(num_images):
-        batch_size = 1
-
-        # Generate latent vector and images based on the GAN type
+    # If plotting is enabled, we will collect plotting info and then plot later.
+    for batch_index in range(num_batches):
+        current_batch_size = min(batch_size, num_images - batch_index * batch_size)
+        
+        # Generate latent vectors and images
         if is_stylegan2(gan_model):
-            z = torch.randn((batch_size, latent_dim), device=device)
+            z = torch.randn((current_batch_size, latent_dim), device=device)
             x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
             x_M_hat = watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
         else:
-            z = torch.randn(batch_size, latent_dim, 1, 1, device=device)
+            z = torch.randn(current_batch_size, latent_dim, 1, 1, device=device)
             x_M = gan_model(z)
             x_M_hat = watermarked_model(z)
 
-        # Constrain the image by max_delta
+        # Constrain the watermarked image based on max_delta
         x_M_hat = constrain_image(x_M_hat, x_M, max_delta)
 
-        # **Compute max delta in absolute value for the image pair**
+        # Compute delta and max delta (per image)
         delta = x_M_hat - x_M
         abs_delta = torch.abs(delta)
-        max_delta_value = abs_delta.view(batch_size, -1).max(dim=1)[0]  # Tensor of size [batch_size]
-        max_deltas_all.append(max_delta_value.item())  # Store the max delta value
+        max_delta_values = abs_delta.view(current_batch_size, -1).max(dim=1)[0]
+        for j in range(current_batch_size):
+            max_deltas_all.append(max_delta_values[j].item())
 
-        # Calculate and store LPIPS loss
-        loss_lpips_all.append(lpips_loss(x_M_hat, x_M).item())
+        # Compute LPIPS loss (assumed to be computed per image)
+        loss_lpips_batch = lpips_loss(x_M_hat, x_M)
+        if loss_lpips_batch.dim() > 0:
+            for j in range(current_batch_size):
+                loss_lpips_all.append(loss_lpips_batch[j].item())
+        else:
+            for j in range(current_batch_size):
+                loss_lpips_all.append(loss_lpips_batch.item())
         
-        # Put mask on before passing to decoder if mask_switch is on
+        # If masking is enabled, apply secret key mask; otherwise, use the images as is.
         if mask_switch:
-            if i == 0:
+            if batch_index == 0:
+                # Generate a key mask for the whole batch (assumes same mask works for all images)
                 k_mask = generate_mask_secret_key(x_M_hat.shape, seed_key, device=device)
-        
             x_M_mask = mask_image_with_key(x_M, k_mask)
             x_M_hat_mask = mask_image_with_key(x_M_hat, k_mask)
+        else:
+            x_M_mask = x_M
+            x_M_hat_mask = x_M_hat
 
-        # Decode the images to get watermark representations
+        # Decode the images to obtain watermark representations
         k_M = decoder(x_M_mask)
         k_M_hat = decoder(x_M_hat_mask)
 
-        # Calculate scores based on watermark similarity
+        # Compute similarity scores based on watermark representations
         norm_factor = torch.sqrt(torch.tensor(len(k_auth), dtype=torch.float32)).item()
-        k_M_score = 1 - (torch.norm(k_auth.unsqueeze(0) - k_M, dim=1) / norm_factor).item()
-        k_M_hat_score = 1 - (torch.norm(k_auth.unsqueeze(0) - k_M_hat, dim=1) / norm_factor).item()
+        # Compute distances for each image in the batch
+        k_M_scores = 1 - (torch.norm(k_auth.unsqueeze(0) - k_M, dim=1) / norm_factor)
+        k_M_hat_scores = 1 - (torch.norm(k_auth.unsqueeze(0) - k_M_hat, dim=1) / norm_factor)
+        for j in range(current_batch_size):
+            scores.append(k_M_scores[j].item())
+            labels.append(0)  # Label for non-watermarked image
+            scores.append(k_M_hat_scores[j].item())
+            labels.append(1)  # Label for watermarked image
 
-        # Append scores and labels
-        scores.append(k_M_score)
-        labels.append(0)  # Non-watermarked image label
-        scores.append(k_M_hat_score)
-        labels.append(1)  # Watermarked image label
-
-        # Normalize images for FID computation
-        # Assuming x_M and x_M_hat are in range [-1, 1]
-        # Convert from [-1, 1] to [0, 255] and cast to uint8
+        # Normalize images for FID computation (assuming range [-1, 1])
         x_M_normalized = ((x_M + 1) / 2 * 255).clamp(0, 255).to(torch.uint8)
         x_M_hat_normalized = ((x_M_hat + 1) / 2 * 255).clamp(0, 255).to(torch.uint8)
-
-        # Update FID metric
         fid_metric.update(x_M_normalized, real=True)
         fid_metric.update(x_M_hat_normalized, real=False)
 
-        # Plotting
+        # If plotting, store each image's data for later plotting
         if plotting:
-            # Original Image
-            ax_orig = axes[i, 0]
-            img_orig = x_M.squeeze().cpu().detach()
-            img_orig = ((img_orig + 1) / 2 * 255).clamp(0, 255).to(torch.uint8)  # Normalize from [-1,1] to [0,255]
-            ax_orig.imshow(to_pil_image(img_orig))
-            ax_orig.set_title(f"Original Image\nScore: {k_M_score:.4f}", fontsize=16)
-            ax_orig.axis("off")
+            for j in range(current_batch_size):
+                # Normalize images for plotting from [-1, 1] to [0, 255]
+                img_orig = ((x_M[j] + 1) / 2 * 255).clamp(0, 255).to(torch.uint8)
+                img_water = ((x_M_hat[j] + 1) / 2 * 255).clamp(0, 255).to(torch.uint8)
+                difference_image = (x_M_hat[j] - x_M[j])
+                # Normalize difference image from [-2,2] to [0,255]
+                difference_image = ((difference_image + 2) / 4 * 255).clamp(0, 255).to(torch.uint8)
+                plot_data.append({
+                    "orig": img_orig.detach().cpu(),
+                    "water": img_water.detach().cpu(),
+                    "score_orig": k_M_scores[j].item(),
+                    "score_water": k_M_hat_scores[j].item(),
+                    "difference": difference_image.detach().cpu()
+                })
 
-            # Watermarked Image
-            ax_water = axes[i, 1]
-            img_water = x_M_hat.squeeze().cpu().detach()
-            img_water = ((img_water + 1) / 2 * 255).clamp(0, 255).to(torch.uint8)  # Normalize from [-1,1] to [0,255]
-            ax_water.imshow(to_pil_image(img_water))
-            ax_water.set_title(f"Watermarked Image\nScore: {k_M_hat_score:.4f}", fontsize=16)
-            ax_water.axis("off")
+        # Clean up intermediate tensors to free memory
+        del z, x_M, x_M_hat, k_M, k_M_hat, k_M_scores, k_M_hat_scores
 
-            # Difference Image
-            ax_diff = axes[i, 2]
-            difference_image = (x_M_hat - x_M).squeeze().cpu().detach()
-            # Normalize difference image from [-2,2] to [0,255]
-            difference_image = ((difference_image + 2) / 4 * 255).clamp(0, 255).to(torch.uint8)
-            # difference_image = enhance_contrast(difference_image)
-            ax_diff.imshow(to_pil_image(difference_image))
-            ax_diff.set_title("Difference", fontsize=16)
-            ax_diff.axis("off")
-
-        # Clean up to free memory
-        del z, x_M, x_M_hat, k_M, k_M_hat, k_M_score, k_M_hat_score
-
-    # After all images are processed, compute FID
+    # After processing all batches, compute FID
     fid_score = fid_metric.compute()
 
-    print(plotting)
-    # After all images are processed, save the figure if plotting
-    if plotting:
+    # Plotting: plot all images in a grid if plotting is enabled
+    if plotting and len(plot_data) > 0:
+        total_plots = len(plot_data)
+        cols = 3  # Original, Watermarked, Difference
+        fig, axes = plt.subplots(nrows=total_plots, ncols=cols, figsize=(15, 5 * total_plots))
+        # Ensure axes is 2D (if only one image, wrap it in a list)
+        if total_plots == 1:
+            axes = np.expand_dims(axes, axis=0)
+        for idx, data in enumerate(plot_data):
+            # Original Image
+            ax_orig = axes[idx, 0]
+            ax_orig.imshow(to_pil_image(data["orig"]))
+            ax_orig.set_title(f"Original\nScore: {data['score_orig']:.4f}", fontsize=16)
+            ax_orig.axis("off")
+            # Watermarked Image
+            ax_water = axes[idx, 1]
+            ax_water.imshow(to_pil_image(data["water"]))
+            ax_water.set_title(f"Watermarked\nScore: {data['score_water']:.4f}", fontsize=16)
+            ax_water.axis("off")
+            # Difference Image
+            ax_diff = axes[idx, 2]
+            ax_diff.imshow(to_pil_image(data["difference"]))
+            ax_diff.set_title("Difference", fontsize=16)
+            ax_diff.axis("off")
         plt.tight_layout()
         plt.savefig("before_and_after_watermark.png")
-        plt.close(fig)  # Close the figure to free memory
+        plt.close(fig)
 
-    # Calculate mean LPIPS loss
+    # Compute mean LPIPS loss and mean max delta across all images
     loss_lpips_mean = statistics.mean(loss_lpips_all)
-
-    # **Calculate mean of max deltas**
     mean_max_delta = statistics.mean(max_deltas_all)
 
-    # Compute ROC AUC
+    # Compute ROC AUC and ROC curve metrics
     auc = roc_auc_score(labels, scores)
-
-    # Compute ROC curve metrics
     fpr, tpr, thresholds = roc_curve(labels, scores)
     tnr = 1 - fpr
 
-    # Print out all values of FPR, TPR, and thresholds explicitly
-    np.set_printoptions(threshold=np.inf)  # Ensure full printing of numpy arrays
+    # Print detailed ROC metrics
+    np.set_printoptions(threshold=np.inf)
     print("False Positive Rate (FPR):", fpr)
     print("True Positive Rate (TPR):", tpr)
     print("Thresholds:", thresholds)
@@ -182,50 +192,39 @@ def evaluate_model(
     plt.tight_layout()
     plt.savefig("roc_auc_curve.png")
     plt.close()
-    
-    # Calculate precision and recall
-    epsilon = 1e-8  # Small value to prevent division by zero
+
+    # Calculate precision and recall (for reference)
+    epsilon = 1e-8
     precision = tpr / (tpr + fpr + epsilon)
     recall = tpr
 
-    # ### Compute TPR@1% FPR ###
-    # Desired FPR threshold
+    # Compute TPR@1% FPR
     desired_fpr = 0.01  # 1%
-
-    # Use interpolation to find the corresponding TPR
     tpr_at_1_fpr = np.interp(desired_fpr, fpr, tpr)
-
-    # Find the threshold corresponding to desired FPR
     best_threshold = np.interp(desired_fpr, fpr, thresholds)
     best_threshold_tpr = tpr_at_1_fpr
 
-    # Plot threshold vs TPR vs FPR
-    # Generate thresholds from 0 to 1 at intervals of 0.001
+    # Compute TPR and FPR across a custom set of thresholds
     thresholds_custom = np.arange(0, 1.001, 0.001)
-
-    # Compute TPR and FPR at each threshold
     tpr_custom = []
     fpr_custom = []
-
+    scores_arr = np.array(scores)
+    labels_arr = np.array(labels)
     for thresh in thresholds_custom:
-        tp = sum((np.array(scores) >= thresh) & (np.array(labels) == 1))
-        fp = sum((np.array(scores) >= thresh) & (np.array(labels) == 0))
-        fn = sum((np.array(scores) < thresh) & (np.array(labels) == 1))
-        tn = sum((np.array(scores) < thresh) & (np.array(labels) == 0))
-
-        tpr = tp / (tp + fn + epsilon)  # True Positive Rate
-        fpr = fp / (fp + tn + epsilon)  # False Positive Rate
-
-        tpr_custom.append(tpr)
-        fpr_custom.append(fpr)
+        tp = np.sum((scores_arr >= thresh) & (labels_arr == 1))
+        fp = np.sum((scores_arr >= thresh) & (labels_arr == 0))
+        fn = np.sum((scores_arr < thresh) & (labels_arr == 1))
+        tn = np.sum((scores_arr < thresh) & (labels_arr == 0))
+        current_tpr = tp / (tp + fn + epsilon)
+        current_fpr = fp / (fp + tn + epsilon)
+        tpr_custom.append(current_tpr)
+        fpr_custom.append(current_fpr)
     
-    # Print header
+    # Print threshold, TPR, and FPR values
     print(f"{'Thresholds':<15}{'TPR':<15}{'FPR':<15}")
     print("-" * 45)
-
-    # Print rows with 6 decimal places
-    for threshold, tpr, fpr in zip(thresholds_custom, tpr_custom, fpr_custom):
-        print(f"{threshold:<15.6f}{tpr:<15.6f}{fpr:<15.6f}")
+    for thresh, t, f in zip(thresholds_custom, tpr_custom, fpr_custom):
+        print(f"{thresh:<15.6f}{t:<15.6f}{f:<15.6f}")
 
     # Plot Threshold vs TPR vs FPR
     plt.figure(figsize=(10, 6))
@@ -240,7 +239,6 @@ def evaluate_model(
     plt.tight_layout()
     plt.savefig("threshold_vs_tpr_vs_fpr.png")
     plt.close()
-
 
     return (
         auc,
