@@ -16,6 +16,28 @@ from utils.key import generate_mask_secret_key, mask_image_with_key
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
+# Set up logging
+def setup_logging(log_file):
+    # Create a logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Create a file handler for writing logs to a file
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)
+    file_formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    file_handler.setFormatter(file_formatter)
+
+    # Create a stream handler for printing logs to the terminal
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+    stream_formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    stream_handler.setFormatter(stream_formatter)
+
+    # Add both handlers to the logger
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+
 def train_model(
     gan_model,
     watermarked_model,
@@ -43,14 +65,9 @@ def train_model(
     # Ensure saving directory exists
     os.makedirs(saving_path, exist_ok=True)
     
-    # Configure logging
+    # Set up logging
     log_file = os.path.join(saving_path, f'training_log_{time_string}.txt')
-    logging.basicConfig(
-        filename=log_file,
-        level=logging.INFO,
-        format='%(asctime)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+    setup_logging(log_file)  # Call the logging setup function
     
     # Log initial configuration
     logging.info(f"time_string = {time_string}")
