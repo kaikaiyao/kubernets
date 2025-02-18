@@ -196,5 +196,5 @@ Upon establishing an SSH session, you may be prompted to enter a one-time passco
 
 Check the current resource usage of the cluster:
 ```bash
-kubectl describe quota -n informatics
+kubectl describe quota
 ```
