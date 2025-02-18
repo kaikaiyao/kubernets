@@ -84,7 +84,7 @@ spec:
           memory: "4Gi"         # Request 4Gi of memory
       volumeMounts:
         - name: workspace
-          mountPath: /workspace/data  # Must match the saving path in your app
+          mountPath: /workspace/results  # Must match the saving path in your app
   restartPolicy: Never
 ```
 
@@ -135,7 +135,7 @@ To inspect the output associated with your PVC (as per your school’s guide):
 2. **Inspect the Output:**  
    Once the sync is active, view the output file by running:
    ```bash
-   kubectl exec -it $USER-ws1-rsync-backend -- cat /data/hello-world.out
+   kubectl exec -it $USER-ws1-rsync-backend -- ls /data
    ```
 
 3. **Shut Down the Rsync Backend:**  
