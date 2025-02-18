@@ -137,7 +137,9 @@ def evaluate_model(
         del z, x_M, x_M_hat, k_M, k_M_hat, k_M_scores, k_M_hat_scores
 
     # After processing all batches, compute FID
+    print("Computing FID, this might take a while...")
     fid_score = fid_metric.compute()
+    print("FID computed")
 
     # Plotting: plot all images in a grid if plotting is enabled
     if plotting and len(plot_data) > 0:
