@@ -41,56 +41,9 @@ Create a PVC on your target Kubernetes machine (e.g., `eidf029` or `eidf108`) us
 kubectl create -f <(PVCNAME=$USER-ws1 STORAGE=250Gi envsubst < pvc.yml)
 ```
 
-Your `pvc.yml` should resemble:
-
-```yaml
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: $PVCNAME
-  labels:
-    eidf/user: $USER
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: $STORAGE
-  storageClassName: csi-rbd-sc
-```
-
 ### 2.2 Creating the Pod
 
-Prepare your pod definition file `my_app.yml` (ensure the PVC name in the `claimName` field matches your setup):
-
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: my-app
-  labels:
-    eidf/user: $USER
-    kueue.x-k8s.io/queue-name: s2470447-infk8s-user-queue
-spec:
-  nodeSelector:
-    nvidia.com/gpu.present: "true"
-  volumes:
-    - name: workspace
-      persistentVolumeClaim:
-        claimName: s2470447-infk8s-ws1
-  containers:
-    - name: my-app
-      image: kaiyaoed/my_app:latest
-      resources:
-        limits:
-          nvidia.com/gpu: "1"   # Request one GPU
-          cpu: "1"              # Request one CPU
-          memory: "4Gi"         # Request 4Gi of memory
-      volumeMounts:
-        - name: workspace
-          mountPath: /workspace/results  # Must match the saving path in your app
-  restartPolicy: Never
-```
+Prepare your pod definition file `my_app.yml` (ensure the PVC name in the `claimName` field matches your setup).
 
 Deploy the pod by substituting environment variables into the YAML file:
 
