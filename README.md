@@ -95,7 +95,15 @@ To inspect the output associated with your PVC (as per your school’s guide):
    kubectl exec -it $USER-ws1-rsync-backend -- ls /data
    ```
 
-3. **Shut Down the Rsync Backend:**  
+   In the current example, the PVC's `/data` is mounted at the original Pod (`my-app`)'s `/workspace/kubernets/results`.
+   
+   You can copy everything under `/data` to local using:
+   ```bash
+   kubectl cp s2470447-infk8s-ws1-rsync-backend:/data/ ./data
+   ```
+   Remember this has to be done on this temporary Pod `s2470447-infk8s-ws1-rsync-backend` not the original Pod `my-app`.
+
+4. **Shut Down the Rsync Backend:**  
    After inspection, shut down the rsync backend pod:
    ```bash
    kubectl pvcsync $USER-ws1 down
