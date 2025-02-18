@@ -56,3 +56,6 @@ spec:
             nvidia.com/gpu: "1"
             cpu: "8"
             memory: "32Gi"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace/kubernets/results
