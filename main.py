@@ -7,6 +7,7 @@ from models.stylegan2 import load_stylegan2_model
 from models.gan import load_gan_model
 from models.decoders.decoder import FlexibleDecoder
 from utils.model_utils import clone_model, load_finetuned_model
+from utils.gpu import get_gpu_info
 
 from training.train_model import train_model
 from evaluation.evaluate_model import evaluate_model
@@ -76,7 +77,9 @@ def main():
     print("===== Input Parameters =====")
     pprint.pprint(vars(args))
     print("============================\n")
-
+    
+    # Call the function to print GPU info
+    get_gpu_info()
 
     if args.mode == "train":
         print(f"PyTorch version: {torch.__version__}")
