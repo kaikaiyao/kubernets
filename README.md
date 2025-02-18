@@ -11,15 +11,19 @@ This guide explains the process of building a Docker image on Windows, pushing i
    ```powershell
    docker build -t my_app .
    ```
-
-2. **Tag and Push the Image**  
+   Below is an updated command to reflect the latest GitHub repo all the time when rebuilding an image:
+   ```powershell
+   docker build --build-arg CACHEBUST=$(Get-Date -UFormat %s) -t my_app .
+   ```
+   
+3. **Tag and Push the Image**  
    After a successful build, tag and push the image to your Docker repository:  
    ```powershell
    docker tag my_app kaiyaoed/my_app:latest
    docker push kaiyaoed/my_app:latest
    ```
 
-3. **Test the Built Image**  
+4. **Test the Built Image**  
    To verify that the image works correctly, run:  
    ```powershell
    docker run -it --rm my_app /bin/bash
