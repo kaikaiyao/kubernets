@@ -11,7 +11,7 @@ spec:
   parallelism: 8
   completionMode: Indexed
   backoffLimit: 0
-  ttlSecondsAfterFinished: 300
+  # ttlSecondsAfterFinished: 300
   template:
     metadata:
       labels:
