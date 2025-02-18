@@ -51,6 +51,7 @@ def evaluate_model(
 
     # If plotting is enabled, we will collect plotting info and then plot later.
     for batch_index in range(num_batches):
+        print(f"Evaluating batch #{batch_index}")
         current_batch_size = min(batch_size, num_images - batch_index * batch_size)
         
         # Generate latent vectors and images
@@ -116,6 +117,7 @@ def evaluate_model(
 
         # If plotting, store each image's data for later plotting
         if plotting:
+            print("Am plotting this image")
             for j in range(current_batch_size):
                 # Normalize images for plotting from [-1, 1] to [0, 255]
                 img_orig = ((x_M[j] + 1) / 2 * 255).clamp(0, 255).to(torch.uint8)
@@ -139,6 +141,7 @@ def evaluate_model(
 
     # Plotting: plot all images in a grid if plotting is enabled
     if plotting and len(plot_data) > 0:
+        print("Am plotting all images")
         total_plots = len(plot_data)
         cols = 3  # Original, Watermarked, Difference
         fig, axes = plt.subplots(nrows=total_plots, ncols=cols, figsize=(15, 5 * total_plots))
