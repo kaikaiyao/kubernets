@@ -9,9 +9,10 @@ RUN apt-get update && \
     dpkg-reconfigure --frontend noninteractive tzdata
 
 # Install system dependencies with combined RUN to minimize layers
-RUN apt-get update && \
+RUN apt-get install -y software-properties-common && \
+    add-apt-repository ppa:ubuntu-toolchain-r/test && \
+    apt-get update && \
     apt-get install -y \
-    software-properties-common \
     git \
     cmake \
     libopenblas-dev \
@@ -19,12 +20,10 @@ RUN apt-get update && \
     zlib1g-dev \
     gcc-10 \
     g++-10 \
-    curl && \  # Ensure curl is installed
-    add-apt-repository ppa:ubuntu-toolchain-r/test && \
-    apt-get update && \
-    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100 && \
-    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 100 && \
-    rm -rf /var/lib/apt/lists/*
+    curl \
+    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 100 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set CUDA paths (already included in base image, but verify)
 ENV PATH="/usr/local/cuda/bin:${PATH}"
