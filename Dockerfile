@@ -70,7 +70,7 @@ WORKDIR /workspace/kubernets
 CMD ["python", "-u", "/workspace/kubernets/main.py", "train", \
      "--stylegan2_url", "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl", \
      "--batch_size", "8", \
-     "--n_iterations", "2000", \
+     "--n_iterations", "500", \
      "--num_eval_samples", "100", \
      "--num_conv_layers", "7", \
      "--num_pool_layers", "7", \
