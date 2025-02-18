@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${USER}-job-ablation
+  labels:
+    eidf/user: ${USER}
+    kueue.x-k8s.io/queue-name: ${INFK8S_QUEUE_NAME}
+    kueue.x-k8s.io/priority-class: batch-workload-priority
+spec:
+  completions: 8
+  parallelism: 8
+  completionMode: Indexed
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        eidf/user: ${USER}
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: s2470447-infk8s-ws1
+      containers:
+      - name: my-app
+        image: kaiyaoed/my_app:latest
+        workingDir: "/workspace/kubernets"
+        env:
+          - name: DELTA_VALUES
+            value: "0.01,0.02,0.05,0.1,0.2,0.5,1.0,2.0"
+        command: ["/bin/bash", "-c"]
+        args:
+          - >
+            IFS=',' read -ra arr <<< "$DELTA_VALUES"; 
+            max_delta=${arr[$((JOB_COMPLETION_INDEX))]};
+            echo "Running experiment with max_delta=$max_delta"; 
+            python -u main.py train
+            --stylegan2_url https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl
+            --batch_size 8
+            --n_iterations 500
+            --num_eval_samples 100
+            --num_conv_layers 7
+            --num_pool_layers 7
+            --initial_channels 64
+            --lr_M_hat 2e-4
+            --lr_D 2e-4
+            --max_delta $max_delta
+            --saving_path results
+            --convergence_threshold 0.0000001
+            --mask_switch True
+        resources:
+          limits:
+            nvidia.com/gpu: "1"
+            cpu: "8"
+            memory: "32Gi"
