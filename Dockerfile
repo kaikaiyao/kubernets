@@ -62,6 +62,13 @@ RUN cd /workspace/kubernets/stylegan2-ada-pytorch \
     && python -c "from torch_utils.ops import upfirdn2d; upfirdn2d._init()" \
     && python -c "from torch_utils.ops import bias_act; bias_act._init()"
 
+# Download pre-trained model weights
+RUN mkdir -p /root/.cache/torch/hub/checkpoints && \
+    curl -L -o /root/.cache/torch/hub/checkpoints/vgg16-397923af.pth \
+    https://download.pytorch.org/models/vgg16-397923af.pth && \
+    curl -L -o /root/.cache/torch/hub/checkpoints/weights-inception-2015-12-05-6726825d.pth \
+    https://github.com/toshas/torch-fidelity/releases/download/v0.2.0/weights-inception-2015-12-05-6726825d.pth
+
 # Set working directory and default command
 WORKDIR /workspace/kubernets
 CMD ["python", "-u", "/workspace/kubernets/main.py", "train", \
