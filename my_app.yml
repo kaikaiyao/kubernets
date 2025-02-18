@@ -18,8 +18,8 @@ spec:
       resources:
         limits:
           nvidia.com/gpu: "1"   # Request one GPU
-          cpu: "1"              # Increase CPU to 2 cores
-          memory: "4Gi"         # Increase memory to 16Gi
+          cpu: "8"              # Increase CPU to 2 cores
+          memory: "32Gi"         # Increase memory to 16Gi
       volumeMounts:
         - name: workspace
           mountPath: /workspace/results  # Must match the saving path in your app's command
