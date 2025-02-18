@@ -1,165 +1,147 @@
-# Running a Kubernetes Pod on EIDF Clusters
-
-This guide explains the process of building a Docker image on Windows, pushing it to your repository, deploying a Kubernetes pod on the EIDF clusters, and managing the associated PersistentVolumeClaim (PVC). An appendix is provided to clarify machine relationships and SSH access setup.
-
----
-
-## 1. Building and Pushing Your Docker Image (Windows / PowerShell)
-
-1. **Build the Docker Image**  
-   In the directory containing your `Dockerfile`, execute:  
-   ```powershell
-   docker build -t my_app .
-   ```
-   Below is an updated command to reflect the latest GitHub repo all the time when rebuilding an image:
-   ```powershell
-   docker build --build-arg CACHEBUST=$(Get-Date -UFormat %s) -t my_app .
-   ```
-   
-3. **Tag and Push the Image**  
-   After a successful build, tag and push the image to your Docker repository:  
-   ```powershell
-   docker tag my_app kaiyaoed/my_app:latest
-   docker push kaiyaoed/my_app:latest
-   ```
-
-4. **Test the Built Image**  
-   To verify that the image works correctly, run:  
-   ```powershell
-   docker run -it --rm my_app /bin/bash
-   ```
+# 🚀 Running Kubernetes Workloads on EIDF Clusters  
+**A guide to deploying Dockerized applications, managing storage, and executing batch jobs on EIDF Kubernetes clusters.**  
 
 ---
 
-## 2. Deploying Your Pod on the Kubernetes Cluster
+## 📦 1. Building and Pushing Your Docker Image (Windows/PowerShell)  
 
-### 2.1 Creating the PersistentVolumeClaim (PVC)
+### 1.1 Build the Docker Image  
+Navigate to your `Dockerfile` directory and run:  
+```powershell
+# Standard build (caches layers)
+docker build -t my_app .
 
-Create a PVC on your target Kubernetes machine (e.g., `eidf029` or `eidf108`) using the following command. This example uses the environment variables `$USER-ws1` for the PVC name and `250Gi` for the storage request:
+# Force fresh build (bypass cache for updates)
+docker build --build-arg CACHEBUST=$(Get-Date -UFormat %s) -t my_app .
+```
 
+### 1.2 Tag and Push to a Registry  
+```powershell
+# Tag the image for your Docker Hub repository
+docker tag my_app kaiyaoed/my_app:latest
+
+# Push to Docker Hub
+docker push kaiyaoed/my_app:latest
+```
+
+### 1.3 Test Locally  
+Validate the image works before deployment:  
+```powershell
+docker run -it --rm my_app /bin/bash
+```
+
+---
+
+## 🚀 2. Deploying a Pod on Kubernetes  
+
+### 2.1 Create a PersistentVolumeClaim (PVC)  
+PVCs provide persistent storage for your pod. Run this on your target cluster (e.g., `eidf029`):  
 ```bash
 kubectl create -f <(PVCNAME=$USER-ws1 STORAGE=250Gi envsubst < pvc.yml)
 ```
+*Replace `pvc.yml` with your PVC definition file.*
 
-### 2.2 Creating the Pod
-
-Prepare your pod definition file `my_app.yml` (ensure the PVC name in the `claimName` field matches your setup).
-
-Deploy the pod by substituting environment variables into the YAML file:
-
+### 2.2 Launch the Pod  
+Deploy your pod with the PVC attached:  
 ```bash
 WORKSPACE_PVC=$USER-ws1 envsubst < my_app.yml | kubectl create -f -
 ```
+*Ensure `my_app.yml` references the correct PVC name in `claimName`.*
 
 ---
 
-## 3. Monitoring and Managing Your Pod
+## 🔍 3. Monitoring and Managing Pods  
 
-- **Track Pod Status:**  
-  To check the status (e.g., running, complete, or suspended), use:
+- **Check Pod Status**  
   ```bash
   kubectl describe pod my-app
   ```
 
-- **View Pod Logs:**  
-  To view application logs (e.g., Python logs), run:
+- **View Logs**  
   ```bash
   kubectl logs my-app
   ```
 
-- **Delete the Pod:**  
-  Once finished and satisfied with the results, delete the pod with:
+- **Delete the Pod**  
   ```bash
   kubectl delete pod my-app
   ```
-  Confirm the deletion when prompted.
 
 ---
 
-## 4. PVC Inspection and Cleanup
+## 🗑️ 4. PVC Management  
 
-### 4.1 Inspecting the PVC
-
-To inspect the output associated with your PVC (as per your school’s guide):
-
-1. **Start PVC Synchronization:**  
-   Bring up the synchronization process:
+### 4.1 Inspect PVC Data  
+1. Start a temporary sync pod:  
    ```bash
    kubectl pvcsync $USER-ws1 up
    ```
-   *Wait until you see several lines of output ending with a message such as "... is listening on port ...". This may take a few seconds.*
+   *Wait for the "listening on port" confirmation.*
 
-2. **Inspect the Output:**  
-   Once the sync is active, view the output file by running:
+2. List or copy files:  
    ```bash
    kubectl exec -it $USER-ws1-rsync-backend -- ls /data
+   kubectl cp $USER-ws1-rsync-backend:/data/ ./local-folder/
    ```
 
-   In the current example, the PVC's `/data` is mounted at the original Pod (`my-app`)'s `/workspace/kubernets/results`.
-   
-   You can copy everything under `/data` to local using:
-   ```bash
-   kubectl cp s2470447-infk8s-ws1-rsync-backend:/data/ ./data
-   ```
-   Remember this has to be done on this temporary Pod `s2470447-infk8s-ws1-rsync-backend` not the original Pod `my-app`.
-
-4. **Shut Down the Rsync Backend:**  
-   After inspection, shut down the rsync backend pod:
+3. Clean up the sync pod:  
    ```bash
    kubectl pvcsync $USER-ws1 down
    ```
 
-### 4.2 Deleting the PVC
-
-When the PVC is no longer needed, delete it using:
+### 4.2 Delete the PVC  
 ```bash
 kubectl delete pvc $USER-ws1
 ```
 
 ---
 
-## Appendix: Machine Relationships and SSH Setup
+## 🔄 5. Running Batch Jobs (Ablation Studies/Parameter Search)  
 
-### Overview
+For parallel tasks like hyperparameter tuning, use Kubernetes **Jobs**.  
 
-- **Local Machine:**  
-  You work from a Windows machine, where you build Docker images and manage SSH sessions.
-
-- **Clusters:**  
-  Two clusters are available through the school's infrastructure:
-  - **EIDF Cluster 107:** Accessible via `eidf107`
-  - **EIDF Cluster 029 (infk8s):** Accessible via `eidf029`
-
-### SSH Access Setup
-
-SSH into the clusters using a jump host from your Windows machine. The following commands use the jump host (`eidf-gateway.epcc.ed.ac.uk`) to access the target clusters:
-
-- **Accessing EIDF Cluster 107:**
-  ```bash
-  ssh -J s2470447-eidf107@eidf-gateway.epcc.ed.ac.uk s2470447-eidf107@10.24.6.77
-  ```
-
-- **Accessing EIDF Cluster 029 (infk8s):**
-  ```bash
-  ssh -J s2470447-infk8s@eidf-gateway.epcc.ed.ac.uk s2470447-infk8s@10.24.5.121
-  ```
-
-### Using MobaXTerm
-
-You have configured three tabs in MobaXTerm for convenience:
-- **Windows PowerShell Tab:** For local Docker image building and testing.
-- **EIDF107 Tab:** SSH session to the EIDF Cluster 107.
-- **EIDF029 Tab:** SSH session to the EIDF Cluster 029 (infk8s).
-
-Each tab automatically connects to the corresponding machine.
-
-### Two-Factor Authentication (TOTP)
-
-Upon establishing an SSH session, you may be prompted to enter a one-time passcode (TOTP) from Microsoft Authenticator, ensuring secure access to the clusters.
-
-## Appendix: Other Useful Commands
-
-Check the current resource usage of the cluster:
+### 5.1 Submit a Batch Job  
+Create an arrayed job (similar to Slurm jobs):  
 ```bash
-kubectl describe quota
+envsubst '$USER $INFK8S_QUEUE_NAME' < job-array.yaml | kubectl create -f -
 ```
+*Replace `job-array.yaml` with your Job template. Uses `$INFK8S_QUEUE_NAME` for resource allocation.*
+
+### 5.2 Monitor Job Progress  
+- **Check Job Status**  
+  ```bash
+  kubectl describe job ${USER}-job-ablation
+  ```
+  *Lists all pods created by the job.*
+
+- **Verify Pod Readiness**  
+  Wait until all pods are ready:  
+  ```bash
+  kubectl wait pod --for=condition=ready -l eidf/user=${USER}
+  ```
+
+---
+
+## 📎 Appendix  
+
+### 🖥️ Machine Relationships & SSH Access  
+- **Local Machine**: Your Windows workstation for building images.  
+- **Clusters**:  
+  - `eidf107`: Accessed via `ssh -J s2470447-eidf107@eidf-gateway.epcc.ed.ac.uk s2470447-eidf107@10.24.6.77`  
+  - `eidf029` (infk8s): Accessed via `ssh -J s2470447-infk8s@eidf-gateway.epcc.ed.ac.uk s2470447-infk8s@10.24.5.121`  
+
+🔐 **Two-Factor Authentication (TOTP)**: Required for SSH access. Use Microsoft Authenticator for codes.  
+
+---
+
+### 🛠️ Other Useful Commands  
+- **Check Cluster Quotas**  
+  ```bash
+  kubectl describe quota
+  ```
+
+---
+
+✨ **Pro Tips**  
+- Use MobaXTerm tabs for easy access to PowerShell, `eidf107`, and `eidf029`.  
+- For multi-container workflows, explore Kubernetes `CronJobs` or `Deployments`.  
