@@ -33,7 +33,7 @@ ENV TORCH_EXTENSIONS_DIR=/workspace/torch_extensions
 RUN mkdir -p ${TORCH_EXTENSIONS_DIR} && chmod -R 777 ${TORCH_EXTENSIONS_DIR}
 
 # Clone repositories
-RUN pwd && git clone https://github.com/kaikaiyao/kubernets.git /workspace/kubernets \
+RUN git clone https://github.com/kaikaiyao/kubernets.git /workspace/kubernets \
     && git clone https://github.com/NVlabs/stylegan2-ada-pytorch.git /workspace/kubernets/stylegan2-ada-pytorch
 
 # Install Python dependencies (including ninja==1.10.2)
