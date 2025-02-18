@@ -120,6 +120,13 @@ envsubst '$USER $INFK8S_QUEUE_NAME' < job-array.yaml | kubectl create -f -
   kubectl wait pod --for=condition=ready -l eidf/user=${USER}
   ```
 
+### 5.3 Useful Commands
+
+- **Get Batched Output**  
+  For example, you can use the below command to grep all GPU type prints from all Pods in this batch Job:
+  ```bash
+  kubectl get pods -l job-name=${USER}-job-ablation -o jsonpath='{.items[*].metadata.name}' | xargs -n1 sh -c 'echo "$0:" $(kubectl logs $0 2>/dev/null | grep "GPU(s) available: NVIDIA" | awk "{print \$4}")'
+  ```
 ---
 
 ## 📎 Appendix  
