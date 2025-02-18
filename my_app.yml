@@ -22,5 +22,5 @@ spec:
           memory: "32Gi"         # Increase memory to 16Gi
       volumeMounts:
         - name: workspace
-          mountPath: /workspace/results  # Must match the saving path in your app's command
+          mountPath: /workspace/kubernets/results  # Must match the saving path in your app's command
   restartPolicy: Never
