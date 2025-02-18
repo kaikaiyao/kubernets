@@ -191,3 +191,10 @@ Each tab automatically connects to the corresponding machine.
 ### Two-Factor Authentication (TOTP)
 
 Upon establishing an SSH session, you may be prompted to enter a one-time passcode (TOTP) from Microsoft Authenticator, ensuring secure access to the clusters.
+
+## Appendix: Other Useful Commands
+
+Check the current resource usage of the cluster:
+```bash
+kubectl describe quota -n informatics
+```
