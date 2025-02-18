@@ -114,6 +114,15 @@ envsubst '$USER $INFK8S_QUEUE_NAME' < job-array.yaml | kubectl create -f -
   ```
   *Lists all pods created by the job.*
 
+- **Check All Individual Pods Status**
+  ```bash
+  kubectl get pods -l job-name=${USER}-job-ablation
+  ```
+  or
+  ```bash
+  kubectl get pods -l eidf/user=${USER}
+  ```
+  
 - **Verify Pod Readiness**  
   Wait until all pods are ready:  
   ```bash
