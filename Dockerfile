@@ -51,6 +51,8 @@ RUN pip install --no-cache-dir \
     lpips \
     imageio-ffmpeg==0.4.3
 
+ARG CACHEBUST=1
+
 # Clone repositories
 RUN git clone https://github.com/kaikaiyao/kubernets.git /workspace/kubernets \
     && git clone https://github.com/NVlabs/stylegan2-ada-pytorch.git /workspace/kubernets/stylegan2-ada-pytorch
