@@ -4,6 +4,7 @@ metadata:
   name: ${USER}-job-ablation
   labels:
     eidf/user: ${USER}
+    kueue.x-k8s.io/queue-name: eidf107-user-queue
 spec:
   completions: 1
   parallelism: 1
