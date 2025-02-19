@@ -10,14 +10,14 @@ spec:
   completions: 8
   parallelism: 8
   completionMode: Indexed
-  backoffLimit: 0
-  # ttlSecondsAfterFinished: 300
+  backoffLimit: 1000000000000  # Retry a very large number of times
+  activeDeadlineSeconds: 86400  # Job can retry for up to 24 hours
   template:
     metadata:
       labels:
         eidf/user: ${USER}
     spec:
-      restartPolicy: Never
+      restartPolicy: OnFailure  # Restart pods that fail (including unschedulable ones)
       nodeSelector:
         nvidia.com/gpu.present: "true"
       volumes:
@@ -35,7 +35,7 @@ spec:
         args:
           - >
             IFS=',' read -ra arr <<< "$DELTA_VALUES"; 
-            max_delta=${arr[$JOB_COMPLETION_INDEX]};
+            max_delta=${arr[$JOB_COMPLETION_INDEX]} ;
             echo "Running experiment with max_delta=$max_delta"; 
             python -u main.py train
             --stylegan2_url https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl

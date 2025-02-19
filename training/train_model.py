@@ -273,10 +273,10 @@ def train_model(
             
             logging.info(
                 f"Eval after training completion at iteration {n_iterations}: "
-                f"AUC score: {auc:.4f if auc is not None else 'None'}, "
-                f"tpr_at_1_fpr: {tpr_at_1_fpr:.4f if tpr_at_1_fpr is not None else 'None'}, "
-                f"best_threshold: {best_threshold:.4f if best_threshold is not None else 'None'}, "
-                f"best_threshold_tpr: {best_threshold_tpr:.4f if best_threshold_tpr is not None else 'None'}, "
+                f"AUC score: {f'{auc:.4f}' if auc is not None else 'None'}, "
+                f"tpr_at_1_fpr: {f'{tpr_at_1_fpr:.4f}' if tpr_at_1_fpr is not None else 'None'}, "
+                f"best_threshold: {f'{best_threshold:.4f}' if best_threshold is not None else 'None'}, "
+                f"best_threshold_tpr: {f'{best_threshold_tpr:.4f}' if best_threshold_tpr is not None else 'None'}, "
                 f"loss_lpips_mean: {loss_lpips_mean:.4f}, "
                 f"fid_score: {fid_score:.4f}, "
                 f"mean_max_delta: {mean_max_delta:.4f}, "
