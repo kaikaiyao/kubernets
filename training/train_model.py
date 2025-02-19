@@ -244,7 +244,11 @@ def train_model(
             previous_avg_loss_key = np.mean(loss_key_history[-4000:-2000])
             convergence_score = abs(current_avg_loss_key - previous_avg_loss_key)
         
-        logging.info(f"Training completed. Convergence score: {convergence_score:.4f if convergence_score is not None else 'Not enough data to compute convergence score'}")
+        logging.info(
+            f"Training completed. Convergence score: {convergence_score:.4f}" 
+            if convergence_score is not None 
+            else "Training completed. Convergence score: Not enough data to compute convergence score"
+        )
         
         if run_eval:
             watermarked_model.eval()
