@@ -4,8 +4,6 @@ metadata:
   name: ${USER}-job-ablation
   labels:
     eidf/user: ${USER}
-    kueue.x-k8s.io/queue-name: ${INFK8S_QUEUE_NAME}
-    kueue.x-k8s.io/priority-class: batch-workload-priority
 spec:
   completions: 1
   parallelism: 1
