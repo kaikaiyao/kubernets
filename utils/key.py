@@ -28,7 +28,7 @@ class CryptoCNN(nn.Module):
         
         # Encrypt seed with AES-CTR
         aes_key = binary_key[:32]
-        cipher = AES.new(aes_key, AES.MODE_CTR, nonce=b'\x00' * 16)
+        cipher = AES.new(aes_key, AES.MODE_CTR, nonce=b'\x00' * 15)  # Nonce reduced to 15 bytes
         ciphertext = cipher.encrypt(seed)
         
         # Convert to floats in [0, 1)
