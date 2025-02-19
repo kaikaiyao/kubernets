@@ -4,7 +4,7 @@ from typing import Tuple
 import numpy as np
 import torch
 import torch.nn as nn
-from Crypto.Cipher import ChaCha20  # Requires pycryptodome
+from Crypto.Cipher import ChaCha20
 
 
 class CryptoCNN(nn.Module):
@@ -44,7 +44,7 @@ class CryptoCNN(nn.Module):
         
         # Encrypt seed using ChaCha20
         chacha_key = binary_key[:32]  # 256-bit key
-        nonce = b'\x00' * 8  # Fixed nonce (cryptographically insecure for production, used only for reproducibility)
+        nonce = b'\x00' * 8  # Fixed nonce (cryptographically insecure for actual deployment, used only for reproducibility)
         cipher = ChaCha20.new(key=chacha_key, nonce=nonce)
         ciphertext = cipher.encrypt(seed)
         
