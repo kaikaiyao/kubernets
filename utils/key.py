@@ -18,7 +18,7 @@ class CryptoCNN(nn.Module):
         self._init_layers_with_scaling(binary_key)
 
     def _init_layers_with_scaling(self, binary_key: bytes) -> None:
-        # Generate ciphertext for all parameters
+        # Calculate total parameters in the network
         total_params = sum(
             p.numel() for p in self.parameters() if p.requires_grad
         )
@@ -77,12 +77,8 @@ def generate_mask_secret_key(
     random.seed(seed)
     binary_key = random.getrandbits(256).to_bytes(32, 'big')
 
-    # Calculate total parameters (example for your CNN)
-    cnn = CryptoCNN(channels, channels, binary_key, total_parameters=0)  # Dummy call
-    total_params = sum(p.numel() for p in cnn.parameters())
-    
     # Create and freeze CNN
-    cnn = CryptoCNN(channels, channels, binary_key, total_params).to(device)
+    cnn = CryptoCNN(channels, channels, binary_key).to(device)
     for param in cnn.parameters():
         param.requires_grad = False
         
