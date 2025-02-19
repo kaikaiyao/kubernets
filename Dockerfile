@@ -68,17 +68,4 @@ RUN git clone https://github.com/kaikaiyao/kubernets.git /workspace/kubernets \
 
 # Set working directory and default command
 WORKDIR /workspace/kubernets
-CMD ["python", "-u", "/workspace/kubernets/main.py", "train", \
-     "--stylegan2_url", "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl", \
-     "--batch_size", "8", \
-     "--n_iterations", "500", \
-     "--num_eval_samples", "100", \
-     "--num_conv_layers", "7", \
-     "--num_pool_layers", "7", \
-     "--initial_channels", "64", \
-     "--lr_M_hat", "2e-4", \
-     "--lr_D", "2e-4", \
-     "--max_delta", "0.01", \
-     "--saving_path", "results", \
-     "--convergence_threshold", "0.0000001", \
-     "--mask_switch", "True"]
+CMD ["true"]
