@@ -2,7 +2,7 @@ import random
 import numpy as np
 import torch
 import torch.nn as nn
-from Crypto.Cipher import AES
+from Crypto.Cipher import ChaCha20  # Requires pycryptodome
 
 class CryptoCNN(nn.Module):
     def __init__(self, input_channels: int, output_channels: int, binary_key: bytes):
@@ -14,7 +14,7 @@ class CryptoCNN(nn.Module):
         self.conv5 = nn.Conv2d(64, output_channels, kernel_size=3, padding=1)
         self.relu = nn.ReLU()
 
-        # Initialize all layers with AES encryption + fan-in scaling
+        # Initialize all layers with ChaCha20 encryption + fan-in scaling
         self._init_layers_with_scaling(binary_key)
 
     def _init_layers_with_scaling(self, binary_key: bytes) -> None:
@@ -26,9 +26,10 @@ class CryptoCNN(nn.Module):
         rng = np.random.default_rng(seed=0)
         seed = rng.bytes(seed_size)
         
-        # Encrypt seed with AES-CTR
-        aes_key = binary_key[:32]
-        cipher = AES.new(aes_key, AES.MODE_CTR, nonce=b'\x00' * 15)  # Nonce reduced to 15 bytes
+        # Encrypt seed with ChaCha20
+        chacha_key = binary_key[:32]  # 256-bit key
+        nonce = b'\x00' * 8  # 64-bit nonce (required by ChaCha20)
+        cipher = ChaCha20.new(key=chacha_key, nonce=nonce)
         ciphertext = cipher.encrypt(seed)
         
         # Convert to floats in [0, 1)
