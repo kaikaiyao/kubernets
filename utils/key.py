@@ -99,7 +99,7 @@ def generate_mask_secret_key(
     """
     _, channels, height, width = image_shape
     
-    # Generate 256-bit key from seed (not suitable for production cryptographic use)
+    # Generate 256-bit key from seed (for experiment reproduction use)
     random.seed(seed)
     binary_key = random.getrandbits(256).to_bytes(32, 'big')
 
