@@ -10,7 +10,7 @@ spec:
   completions: 8
   parallelism: 8
   completionMode: Indexed
-  backoffLimit: 1000000000000  # Retry a very large number of times
+  backoffLimit: 2147483647  # Maximum allowed value for int32 # Retry a very large number of times
   activeDeadlineSeconds: 86400  # Job can retry for up to 24 hours
   template:
     metadata:
