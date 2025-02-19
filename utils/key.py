@@ -1,41 +1,11 @@
 import random
-from hashlib import shake_256
-
 import numpy as np
 import torch
 import torch.nn as nn
-
-
-def generate_keys(length: int, seed: int) -> torch.Tensor:
-    """Generates Bernoulli-distributed authentication keys with a given seed.
-    
-    Args:
-        length: Length of the key tensor to generate
-        seed: Seed value for reproducible random number generation
-    
-    Returns:
-        Tensor containing binary authentication keys (0s and 1s)
-    """
-    torch.manual_seed(seed)
-    return torch.bernoulli(torch.full((length,), 0.5))
-
+from Crypto.Cipher import AES
 
 class CryptoCNN(nn.Module):
-    """CNN with cryptographic parameter initialization for image masking.
-    
-    Attributes:
-        conv1-5: Convolutional layers with ReLU activations
-        relu: ReLU activation function
-    """
-
     def __init__(self, input_channels: int, output_channels: int, binary_key: bytes):
-        """Initializes CNN parameters using cryptographic hash of binary key.
-        
-        Args:
-            input_channels: Number of input channels
-            output_channels: Number of output channels
-            binary_key: 256-bit secret key as bytes for parameter generation
-        """
         super().__init__()
         self.conv1 = nn.Conv2d(input_channels, 64, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
@@ -44,135 +14,83 @@ class CryptoCNN(nn.Module):
         self.conv5 = nn.Conv2d(64, output_channels, kernel_size=3, padding=1)
         self.relu = nn.ReLU()
 
-        # Initialize parameters using cryptographic key
-        layers = [
-            ('conv1', self.conv1),
-            ('conv2', self.conv2),
-            ('conv3', self.conv3),
-            ('conv4', self.conv4),
-            ('conv5', self.conv5),
-        ]
-        for name, layer in layers:
-            self._init_layer(layer, name, binary_key)
+        # Initialize all layers with AES encryption + fan-in scaling
+        self._init_layers_with_scaling(binary_key)
 
-    def _init_layer(self, layer: nn.Module, layer_name: str, binary_key: bytes) -> None:
-        """Initializes layer parameters using cryptographic hash function.
-        
-        Args:
-            layer: Layer module to initialize
-            layer_name: Identifier for layer in hash function
-            binary_key: Secret key bytes for hash initialization
-        """
-        fan_in = layer.in_channels * layer.kernel_size[0] * layer.kernel_size[1]
-        bound = 1.0 / np.sqrt(fan_in)
-
-        # Initialize weights
-        weight = self._generate_parameter(
-            binary_key, f"{layer_name}.weight", layer.weight.shape, bound
+    def _init_layers_with_scaling(self, binary_key: bytes) -> None:
+        # Generate ciphertext for all parameters
+        total_params = sum(
+            p.numel() for p in self.parameters() if p.requires_grad
         )
-        layer.weight.data = weight.to(layer.weight.device)
-
-        # Initialize biases
-        if layer.bias is not None:
-            bias = self._generate_parameter(
-                binary_key, f"{layer_name}.bias", layer.bias.shape, bound
-            )
-            layer.bias.data = bias.to(layer.bias.device)
-
-    def _generate_parameter(
-        self, 
-        binary_key: bytes, 
-        identifier: str, 
-        shape: tuple, 
-        bound: float
-    ) -> torch.Tensor:
-        """Generates random parameters using SHAKE-256 extendable-output function.
+        seed_size = total_params * 4  # 4 bytes per float32
+        rng = np.random.default_rng(seed=0)
+        seed = rng.bytes(seed_size)
         
-        Args:
-            binary_key: Secret key bytes for hash initialization
-            identifier: Layer parameter identifier
-            shape: Tensor shape for generated parameters
-            bound: Scaling factor for parameter values
-            
-        Returns:
-            Tensor with cryptographically-generated values in [-bound, bound)
-        """
-        num_elements = np.prod(shape)
-        num_bytes = num_elements * 4  # 4 bytes per float32
+        # Encrypt seed with AES-CTR
+        aes_key = binary_key[:32]
+        cipher = AES.new(aes_key, AES.MODE_CTR, nonce=b'\x00' * 16)
+        ciphertext = cipher.encrypt(seed)
         
-        # Generate deterministic bytes using key and parameter identifier
-        hasher = shake_256()
-        hasher.update(identifier.encode() + binary_key)
-        bytes_data = hasher.digest(num_bytes)
-
-        # Convert bytes to normalized float32 tensor
-        uint32_vals = np.frombuffer(bytes_data, dtype='>u4')
+        # Convert to floats in [0, 1)
+        uint32_vals = np.frombuffer(ciphertext, dtype='>u4')
         floats = uint32_vals.astype(np.float32) / np.float32(0xFFFFFFFF)
-        scaled_floats = (floats * 2 * bound) - bound
         
-        return torch.from_numpy(scaled_floats.reshape(shape))
+        # Split into parameters with per-layer scaling
+        ptr = 0
+        for layer in [self.conv1, self.conv2, self.conv3, self.conv4, self.conv5]:
+            # Calculate fan-in and bound for weights
+            fan_in = layer.in_channels * layer.kernel_size[0] * layer.kernel_size[1]
+            bound = 1.0 / np.sqrt(fan_in)
+            
+            # Assign weights
+            weight_size = np.prod(layer.weight.shape)
+            layer_weights = floats[ptr:ptr + weight_size]
+            scaled_weights = (layer_weights * 2 * bound) - bound  # Scale to [-bound, bound)
+            layer.weight.data = torch.from_numpy(scaled_weights.reshape(layer.weight.shape))
+            ptr += weight_size
+            
+            # Assign biases (if exists)
+            if layer.bias is not None:
+                bias_size = np.prod(layer.bias.shape)
+                layer_biases = floats[ptr:ptr + bias_size]
+                scaled_biases = (layer_biases * 2 * bound) - bound  # Same scaling as weights
+                layer.bias.data = torch.from_numpy(scaled_biases.reshape(layer.bias.shape))
+                ptr += bias_size
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through convolutional layers with ReLU activations.
-        
-        Args:
-            x: Input tensor of shape (batch, channels, height, width)
-            
-        Returns:
-            Output tensor with same spatial dimensions as input
-        """
+        # Unchanged forward pass
         x = self.relu(self.conv1(x))
         x = self.relu(self.conv2(x))
         x = self.relu(self.conv3(x))
         x = self.relu(self.conv4(x))
         return self.conv5(x)
 
-
 def generate_mask_secret_key(
     image_shape: tuple, 
     seed: int, 
     device: str = 'cpu'
 ) -> nn.Module:
-    """Generates frozen CNN mask generator initialized with cryptographic key.
-    
-    Args:
-        image_shape: Shape of input images (batch, channels, height, width)
-        seed: Seed value for reproducible key generation
-        device: Target device for CNN parameters
-        
-    Returns:
-        Frozen CNN module for image masking
-    """
+    """Generates frozen CNN mask generator."""
     _, channels, height, width = image_shape
     
     # Generate 256-bit key from seed
     random.seed(seed)
     binary_key = random.getrandbits(256).to_bytes(32, 'big')
 
+    # Calculate total parameters (example for your CNN)
+    cnn = CryptoCNN(channels, channels, binary_key, total_parameters=0)  # Dummy call
+    total_params = sum(p.numel() for p in cnn.parameters())
+    
     # Create and freeze CNN
-    cnn = CryptoCNN(channels, channels, binary_key).to(device)
+    cnn = CryptoCNN(channels, channels, binary_key, total_params).to(device)
     for param in cnn.parameters():
         param.requires_grad = False
         
     return cnn
 
-
-def mask_image_with_key(
-    images: torch.Tensor, 
-    cnn_key: nn.Module
-) -> torch.Tensor:
-    """Applies CNN-based mask to input images after normalization.
-    
-    Args:
-        images: Input tensor of shape (batch, channels, height, width)
-        cnn_key: Mask generator CNN module
-        
-    Returns:
-        Masked images with same shape as input
-    """
-    # Normalize to [0, 1] range per image
+def mask_image_with_key(images: torch.Tensor, cnn_key: nn.Module) -> torch.Tensor:
+    # Same masking function as before
     images_min = images.amin(dim=(1, 2, 3), keepdim=True)
     images_max = images.amax(dim=(1, 2, 3), keepdim=True)
     normalized = (images - images_min) / (images_max - images_min + 1e-8)
-
     return cnn_key(normalized)

@@ -2,7 +2,6 @@ import argparse
 import torch
 import pprint
 
-from utils.key import generate_keys
 from models.stylegan2 import load_stylegan2_model
 from models.gan import load_gan_model
 from models.decoders.decoder import FlexibleDecoder
@@ -20,7 +19,6 @@ def main():
     parser.add_argument("mode", choices=["train", "eval", "attack"], help="Mode to run the script in")
 
     # Common arguments
-    parser.add_argument("--length_k_auth", type=int, default=1, help="Length of the authentication key")
     parser.add_argument("--seed_key", type=int, default=2024, help="Seed for the random authentication key")
     parser.add_argument("--stylegan2_url", type=str, default="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl", help="URL to load the StyleGAN2 model from")
     parser.add_argument("--self_trained", type=bool, default=False, help="Use a self-trained GAN model")
@@ -87,7 +85,7 @@ def main():
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        k_auth = generate_keys(args.length_k_auth, args.seed_key)
+        k_auth = torch.tensor([0])
         print(f"k_auth = {k_auth}")
         k_auth = k_auth.to(device)
 
@@ -97,7 +95,7 @@ def main():
             gan_model = load_gan_model(args.self_trained_model_path, latent_dim).to(device)
             watermarked_model = clone_model(gan_model).to(device)
             decoder = FlexibleDecoder(
-                args.length_k_auth,
+                1,
                 args.num_conv_layers,
                 args.num_pool_layers,
                 args.initial_channels,
@@ -131,7 +129,7 @@ def main():
             gan_model = load_stylegan2_model(url=args.stylegan2_url, local_path=local_path).to(device)
             watermarked_model = clone_model(gan_model).to(device)
             decoder = FlexibleDecoder(
-                args.length_k_auth,
+                1,
                 args.num_conv_layers,
                 args.num_pool_layers,
                 args.initial_channels,
@@ -180,7 +178,7 @@ def main():
         watermarked_model.eval()
 
         decoder = FlexibleDecoder(
-            args.length_k_auth,
+            1,
             args.num_conv_layers,
             args.num_pool_layers,
             args.initial_channels,
@@ -188,7 +186,7 @@ def main():
         decoder.load_state_dict(torch.load(args.decoder_model_path))
         decoder = decoder.to(device)
 
-        k_auth = generate_keys(args.length_k_auth, args.seed_key)
+        k_auth = torch.tensor([0])
         print(f"k_auth = {k_auth}")
         k_auth = k_auth.to(device)
         
@@ -233,7 +231,7 @@ def main():
         watermarked_model.eval()
 
         decoder = FlexibleDecoder(
-            args.length_k_auth,
+            1,
             args.num_conv_layers,
             args.num_pool_layers,
             args.initial_channels,
@@ -257,7 +255,7 @@ def main():
             decoder_initial_channels=args.initial_channels,
         )
 
-        k_auth = generate_keys(args.length_k_auth, args.seed_key)
+        k_auth = torch.tensor([0])
         print(f"k_auth = {k_auth}")
         k_auth = k_auth.to(device)
 

@@ -50,6 +50,7 @@ RUN pip install --no-cache-dir \
     pycryptodome \
     cryptography \
     lpips \
+    pycryptodome \
     imageio-ffmpeg==0.4.3
 
 # Download pre-trained model weights
