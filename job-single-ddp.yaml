@@ -66,8 +66,8 @@ spec:
           resources:
             limits:
               nvidia.com/gpu: "4"  # Using 4 GPUs
-              cpu: "16"  # Increased CPU for multi-GPU
-              memory: "64Gi"  # Increased memory for multi-GPU
+              cpu: "4"  # Increased CPU for multi-GPU
+              memory: "16Gi"  # Increased memory for multi-GPU
           volumeMounts:
             - name: workspace
               mountPath: /workspace/kubernets/results
