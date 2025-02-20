@@ -200,9 +200,9 @@ def main():
         decoder.load_state_dict(torch.load(args.decoder_model_path))
         decoder = decoder.to(device)
 
-        k_auth = torch.tensor([0])
+        # Modified k_auth initialization
+        k_auth = torch.tensor([0], device=device)  # Create directly on device
         print(f"k_auth = {k_auth}")
-        k_auth = k_auth.to(device)
         
         print(args.plotting)
         auc, tpr_at_1_fpr, best_threshold, best_threshold_tpr, loss_lpips_mean, fid_score, mean_max_delta, total_decoder_params = evaluate_model(
@@ -269,9 +269,9 @@ def main():
             decoder_initial_channels=args.initial_channels,
         )
 
-        k_auth = torch.tensor([0])
+        # Modified k_auth initialization
+        k_auth = torch.tensor([0], device=device)  # Create directly on device
         print(f"k_auth = {k_auth}")
-        k_auth = k_auth.to(device)
 
         if args.attack_method == "bb":
             black_box_attack_binary_based(
