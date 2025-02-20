@@ -62,7 +62,7 @@ class CryptoCNN(nn.Module):
             weight_size = np.prod(layer.weight.shape)
             layer_weights = normalized_floats[pointer:pointer + weight_size]
             scaled_weights = (layer_weights * 2 * bound) - bound
-            layer.weight.data = torch.from_numpy(scaled_weights.reshape(layer.weight.shape))
+            layer.weight.data = torch.from_numpy(scaled_weights.reshape(layer.weight.shape)).float()
             pointer += weight_size
             
             # Bias initialization
@@ -70,7 +70,7 @@ class CryptoCNN(nn.Module):
                 bias_size = np.prod(layer.bias.shape)
                 layer_biases = normalized_floats[pointer:pointer + bias_size]
                 scaled_biases = (layer_biases * 2 * bound) - bound
-                layer.bias.data = torch.from_numpy(scaled_biases.reshape(layer.bias.shape))
+                layer.bias.data = torch.from_numpy(scaled_biases.reshape(layer.bias.shape)).float()
                 pointer += bias_size
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

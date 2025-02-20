@@ -1,8 +1,3 @@
-# Add at the VERY TOP of the file (before any other imports)
-import os
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # Ensure proper device ordering
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Start with first GPU only
-
 import argparse
 import os
 import subprocess
