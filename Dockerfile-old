@@ -1,5 +1,5 @@
-# Base image with CUDA 12.6 and MIG tools
-FROM nvidia/cuda:12.6.0-devel-ubuntu22.04
+# Use a newer PyTorch image with CUDA 12.1 and PyTorch 2.1.0
+FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-devel
 
 # Set timezone non-interactively
 ENV DEBIAN_FRONTEND=noninteractive
@@ -8,7 +8,7 @@ RUN apt-get update && \
     ln -fs /usr/share/zoneinfo/UTC /etc/localtime && \
     dpkg-reconfigure --frontend noninteractive tzdata
 
-# Install system dependencies with MIG support
+# Install system dependencies with combined RUN to minimize layers
 RUN apt-get install -y software-properties-common && \
     add-apt-repository ppa:ubuntu-toolchain-r/test && \
     apt-get update && \
@@ -18,29 +18,22 @@ RUN apt-get install -y software-properties-common && \
     libopenblas-dev \
     libjpeg-dev \
     zlib1g-dev \
-    gcc-12 \
-    g++-12 \
+    gcc-10 \
+    g++-10 \
     curl \
-    nvidia-fabricmanager-535 \
-    nvidia-driver-535 \
-    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 \
-    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100 \
+    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 100 \
     && rm -rf /var/lib/apt/lists/*
 
-# Configure CUDA paths and MIG capabilities
+# Set CUDA paths (already included in base image, but verify)
 ENV PATH="/usr/local/cuda/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
-ENV NVIDIA_DISABLE_REQUIRE=1
-ENV NVIDIA_VISIBLE_DEVICES=all
 
-# Install PyTorch 2.3 with CUDA 12.1 compatibility
-RUN pip install --no-cache-dir \
-    torch==2.3.0 \
-    torchvision==0.18.0 \
-    torchaudio==2.3.0 \
-    --index-url https://download.pytorch.org/whl/cu121
+# Use a writable directory for torch extensions (avoid /root permission issues)
+ENV TORCH_EXTENSIONS_DIR=/workspace/torch_extensions
+RUN mkdir -p ${TORCH_EXTENSIONS_DIR} && chmod -R 777 ${TORCH_EXTENSIONS_DIR}
 
-# Install remaining Python dependencies
+# Install Python dependencies (including ninja==1.10.2)
 RUN pip install --no-cache-dir \
     ninja==1.10.2 \
     torchmetrics \
@@ -57,11 +50,8 @@ RUN pip install --no-cache-dir \
     pycryptodome \
     cryptography \
     lpips \
+    pycryptodome \
     imageio-ffmpeg==0.4.3
-
-# Configure writable directories
-ENV TORCH_EXTENSIONS_DIR=/workspace/torch_extensions
-RUN mkdir -p ${TORCH_EXTENSIONS_DIR} && chmod -R 777 ${TORCH_EXTENSIONS_DIR}
 
 # Download pre-trained model weights
 RUN mkdir -p /root/.cache/torch/hub/checkpoints && \
@@ -76,12 +66,12 @@ ARG CACHEBUST=1
 RUN git clone https://github.com/kaikaiyao/kubernets.git /workspace/kubernets \
     && git clone https://github.com/NVlabs/stylegan2-ada-pytorch.git /workspace/kubernets/stylegan2-ada-pytorch
 
-# Create workspace directories
+# Create the parent directory and subdirectories for results
 RUN mkdir -p /workspace/kubernets/results && \
     for i in {0..7}; do \
         mkdir -p /workspace/kubernets/results/$i; \
     done
 
-# Set working directory
+# Set working directory and default command
 WORKDIR /workspace/kubernets
 CMD ["true"]

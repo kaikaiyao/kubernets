@@ -1,3 +1,8 @@
+# Add at the VERY TOP of the file (before any other imports)
+import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # Ensure proper device ordering
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Start with first GPU only
+
 import argparse
 import os
 import subprocess
@@ -15,30 +20,19 @@ from evaluation.evaluate_model import evaluate_model
 from evaluation.attacks import black_box_attack_binary_based
 
 
+# Then modify the initialize_cuda function
 def initialize_cuda():
-    """Initialize CUDA and verify GPU availability."""
     try:
-        # Check for NVIDIA driver first
-        print("Checking NVIDIA driver...")
-        subprocess.check_output(["nvidia-smi"])
-        print("nvidia-smi output:\n", subprocess.getoutput("nvidia-smi"))
-    except Exception as e:
-        print("nvidia-smi failed:", str(e))
-        return torch.device("cpu")
-
-    if not torch.cuda.is_available():
-        print("PyTorch reports CUDA unavailable")
-        return torch.device("cpu")
-
-    try:
-        # Get actual device count before initialization
-        print(f"Devices before init: {torch.cuda.device_count()}")
+        # Explicit initialization
+        torch.cuda.init()
         
-        # Force proper initialization sequence
-        _ = torch.zeros(1).cuda()
-        print(f"Devices after init: {torch.cuda.device_count()}")
-        
-        return torch.device("cuda")
+        if torch.cuda.is_available():
+            print(f"Discovered {torch.cuda.device_count()} GPUs")
+            # Validate all devices
+            for i in range(torch.cuda.device_count()):
+                print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+            return torch.device("cuda")
+        return torch.device("cpu")
     except Exception as e:
         print(f"CUDA initialization failed: {str(e)}")
         return torch.device("cpu")
@@ -159,7 +153,7 @@ def main():
             )
         else:
             local_path = args.stylegan2_url.split('/')[-1]
-            gan_model = load_stylegan2_model(url=args.stylegan2_url, local_path=local_path).to(device)
+            gan_model = load_stylegan2_model(url=args.stylegan2_url, local_path=local_path, device=device)
             watermarked_model = clone_model(gan_model).to(device)
             decoder = FlexibleDecoder(
                 1,
@@ -203,7 +197,7 @@ def main():
             latent_dim = args.self_trained_latent_dim
             gan_model = load_gan_model(args.self_trained_model_path, latent_dim).to(device)
         else:
-            gan_model = load_stylegan2_model(url=args.stylegan2_url, local_path=local_path).to(device)
+            gan_model = load_stylegan2_model(url=args.stylegan2_url, local_path=local_path, device=device)
             latent_dim = gan_model.z_dim
 
         watermarked_model = load_finetuned_model(args.watermarked_model_path)
@@ -255,7 +249,7 @@ def main():
             latent_dim = args.self_trained_latent_dim
             gan_model = load_gan_model(args.self_trained_model_path, latent_dim).to(device)
         else:
-            gan_model = load_stylegan2_model(url=args.stylegan2_url, local_path=local_path).to(device)
+            gan_model = load_stylegan2_model(url=args.stylegan2_url, local_path=local_path, device=device)
             latent_dim = gan_model.z_dim
 
         watermarked_model = load_finetuned_model(args.watermarked_model_path)
