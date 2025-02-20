@@ -8,7 +8,7 @@ RUN apt-get update && \
     ln -fs /usr/share/zoneinfo/UTC /etc/localtime && \
     dpkg-reconfigure --frontend noninteractive tzdata
 
-# Install system dependencies with MIG support
+# Install system dependencies with Python and MIG support
 RUN apt-get install -y software-properties-common && \
     add-apt-repository ppa:ubuntu-toolchain-r/test && \
     apt-get update && \
@@ -21,8 +21,10 @@ RUN apt-get install -y software-properties-common && \
     gcc-12 \
     g++-12 \
     curl \
+    python3.10 \
+    python3-pip \
+    python3-dev \
     nvidia-fabricmanager-535 \
-    nvidia-driver-535 \
     && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 \
     && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100 \
     && rm -rf /var/lib/apt/lists/*
@@ -34,7 +36,7 @@ ENV NVIDIA_DISABLE_REQUIRE=1
 ENV NVIDIA_VISIBLE_DEVICES=all
 
 # Install PyTorch 2.3 with CUDA 12.1 compatibility
-RUN pip install --no-cache-dir \
+RUN pip3 install --no-cache-dir \
     torch==2.3.0 \
     torchvision==0.18.0 \
     torchaudio==2.3.0 \
@@ -77,10 +79,7 @@ RUN git clone https://github.com/kaikaiyao/kubernets.git /workspace/kubernets \
     && git clone https://github.com/NVlabs/stylegan2-ada-pytorch.git /workspace/kubernets/stylegan2-ada-pytorch
 
 # Create workspace directories
-RUN mkdir -p /workspace/kubernets/results && \
-    for i in {0..7}; do \
-        mkdir -p /workspace/kubernets/results/$i; \
-    done
+RUN mkdir -p /workspace/kubernets/results
 
 # Set working directory
 WORKDIR /workspace/kubernets
