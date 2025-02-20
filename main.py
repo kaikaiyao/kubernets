@@ -1,4 +1,6 @@
 import argparse
+import os
+import subprocess
 import torch
 import pprint
 
@@ -12,15 +14,35 @@ from training.train_model import train_model
 from evaluation.evaluate_model import evaluate_model
 from evaluation.attacks import black_box_attack_binary_based
 
-# Add this helper function at the top
+
 def initialize_cuda():
-    if torch.cuda.is_available():
-        # Force CUDA initialization
-        torch.cuda.init()
-        # Create a dummy tensor to ensure context creation
-        torch.zeros(1).cuda()
+    """Initialize CUDA and verify GPU availability."""
+    try:
+        # Check for NVIDIA driver first
+        print("Checking NVIDIA driver...")
+        subprocess.check_output(["nvidia-smi"])
+        print("nvidia-smi output:\n", subprocess.getoutput("nvidia-smi"))
+    except Exception as e:
+        print("nvidia-smi failed:", str(e))
+        return torch.device("cpu")
+
+    if not torch.cuda.is_available():
+        print("PyTorch reports CUDA unavailable")
+        return torch.device("cpu")
+
+    try:
+        # Get actual device count before initialization
+        print(f"Devices before init: {torch.cuda.device_count()}")
+        
+        # Force proper initialization sequence
+        _ = torch.zeros(1).cuda()
+        print(f"Devices after init: {torch.cuda.device_count()}")
+        
         return torch.device("cuda")
-    return torch.device("cpu")
+    except Exception as e:
+        print(f"CUDA initialization failed: {str(e)}")
+        return torch.device("cpu")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Run training or evaluation for the model.")
@@ -36,15 +58,6 @@ def main():
     parser.add_argument("--saving_path", type=str, default="results", help="Path to save all related results.")
 
     # Decoder arguments
-    # We test 5 decoder sizes, with varying number of Conv2D layers. D5 has a model size similar to the largest ResNet.
-    # Cannot have 2 conv in 1 block will highly likely fail
-    # D1 - 1, 1, 64 (40KB)
-    # D2 - 2, 2, 64
-    # D3 - 3, 3, 64
-    # D4 - 4, 4, 64
-    # D5 - 5, 5, 64 (25MB)
-    # D6 - 6, 6, 64 (97MB)
-    # D7 - 7, 7, 64 (387MB)
     parser.add_argument("--num_conv_layers", type=int, default=5, help="Total number of convolutional layers in the model")
     parser.add_argument("--num_pool_layers", type=int, default=5, help="Total number of pooling layers in the model")
     parser.add_argument("--initial_channels", type=int, default=64, help="Initial number of channels for the first convolutional layer")
@@ -58,12 +71,10 @@ def main():
     parser.add_argument("--lr_M_hat", type=float, default=1e-4, help="Learning rate for the watermarked model")
     parser.add_argument("--lr_D", type=float, default=1e-4, help="Learning rate for the decoder")
     parser.add_argument("--max_delta", type=float, default=0.01, help="Maximum allowed change per pixel (infinite norm constraint)")
-    # parser.add_argument("--eval_interval", type=int, default=500, help="Interval for evaluating the model during training")
     parser.add_argument("--run_eval", type=bool, default=True, help="Run evaluation function during training")
     parser.add_argument("--convergence_threshold", type=float, default=0.005, help="Threshold between loss_key diff of each 2000 epochs to determine convergence.")
     parser.add_argument("--mask_switch", type=bool, default=False, help="To apply the new masking pipeline")
     parser.add_argument("--mask_threshold", type=float, default=0.2, help="Threshold for mask")
-    
 
     # Evaluation arguments
     parser.add_argument("--num_eval_samples", type=int, default=100, help="Number of images to evaluate")
@@ -85,21 +96,29 @@ def main():
     pprint.pprint(vars(args))
     print("============================\n")
     
-    # Modified device initialization
-    device = initialize_cuda()
-    print(f"Using device: {device}")
-
     # Call the function to print GPU info
     get_gpu_info()
 
+    # Environment checks FIRST
+    print("===== Environment Check =====")
+    print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
+    
+    # Device initialization
+    device = initialize_cuda()
+    print(f"\nInitial device: {device}")
+    
+    # Early CUDA check
+    if device.type == "cuda":
+        try:
+            print(f"First GPU: {torch.cuda.get_device_name(0)}")
+        except RuntimeError as e:
+            print(f"GPU access failed: {str(e)}")
+            device = torch.device("cpu")
 
     if args.mode == "train":
         print(f"PyTorch version: {torch.__version__}")
         print(f"PyTorch detected CUDA version: {torch.version.cuda}")
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # Modified k_auth initialization
         k_auth = torch.tensor([0], device=device)  # Create directly on device
         print(f"k_auth = {k_auth}")
 
@@ -200,8 +219,7 @@ def main():
         decoder.load_state_dict(torch.load(args.decoder_model_path))
         decoder = decoder.to(device)
 
-        # Modified k_auth initialization
-        k_auth = torch.tensor([0], device=device)  # Create directly on device
+        k_auth = torch.tensor([0], device=device)
         print(f"k_auth = {k_auth}")
         
         print(args.plotting)
@@ -253,13 +271,6 @@ def main():
         decoder.load_state_dict(torch.load(args.decoder_model_path))
         decoder = decoder.to(device)
 
-        # surrogate_decoder = FlexibleDecoder(
-        #     1, # binary classification with one final-layer neuron
-        #     args.num_conv_layers_surr,
-        #     args.num_pool_layers_surr,
-        #     args.initial_channels_surr,
-        # ).to(device)
-
         from models.decoders.attack_decoder import CombinedModel
         surrogate_decoder = CombinedModel(
             input_channels=3, 
@@ -269,8 +280,7 @@ def main():
             decoder_initial_channels=args.initial_channels,
         )
 
-        # Modified k_auth initialization
-        k_auth = torch.tensor([0], device=device)  # Create directly on device
+        k_auth = torch.tensor([0], device=device)
         print(f"k_auth = {k_auth}")
 
         if args.attack_method == "bb":
