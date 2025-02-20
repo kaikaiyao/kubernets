@@ -39,7 +39,7 @@ spec:
               echo "Running experiment with max_delta=$max_delta"
               # Use a subdirectory based on the job index
               mkdir -p /workspace/kubernets/results/$JOB_COMPLETION_INDEX
-              python -u main.py train \
+              python3 -u main.py train \
                 --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
                 --batch_size=8 \
                 --n_iterations=200000 \
