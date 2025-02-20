@@ -18,16 +18,19 @@ from evaluation.attacks import black_box_attack_binary_based
 # Then modify the initialize_cuda function
 def initialize_cuda():
     try:
-        # Explicit initialization
-        torch.cuda.init()
+        # Check for CUDA availability first
+        if not torch.cuda.is_available():
+            return torch.device("cpu")
+            
+        # Force CUDA initialization with dummy tensor
+        _ = torch.empty(1).cuda()
         
-        if torch.cuda.is_available():
-            print(f"Discovered {torch.cuda.device_count()} GPUs")
-            # Validate all devices
-            for i in range(torch.cuda.device_count()):
-                print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-            return torch.device("cuda")
-        return torch.device("cpu")
+        # Verify device count after initialization
+        print(f"Discovered {torch.cuda.device_count()} GPUs")
+        for i in range(torch.cuda.device_count()):
+            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+            
+        return torch.device("cuda")
     except Exception as e:
         print(f"CUDA initialization failed: {str(e)}")
         return torch.device("cpu")

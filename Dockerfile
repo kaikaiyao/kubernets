@@ -25,6 +25,8 @@ RUN apt-get install -y software-properties-common && \
     python3-pip \
     python3-dev \
     nvidia-fabricmanager-535 \
+    nvidia-mig-manager \
+    nvidia-mig-parted \
     && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 \
     && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100 \
     && rm -rf /var/lib/apt/lists/*

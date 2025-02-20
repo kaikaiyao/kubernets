@@ -58,10 +58,15 @@ def train_model(
     logging.info(f"The decoder model's number of parameters is: {sum(p.numel() for p in decoder.parameters())}")
     logging.info(f"The convergence threshold is: {convergence_threshold}")
 
-    if torch.cuda.is_available() and torch.cuda.device_count() > 1:
-        watermarked_model = torch.nn.DataParallel(watermarked_model)
-        decoder = torch.nn.DataParallel(decoder)
-        print(f"Using {torch.cuda.device_count()} GPUs for training")
+    # Check CUDA status before wrapping models
+    if device.type == "cuda":
+        # Verify device count matches expectations
+        available_devices = torch.cuda.device_count()
+        print(f"Training with {available_devices} GPUs")
+        
+        if available_devices > 1:
+            watermarked_model = torch.nn.DataParallel(watermarked_model)
+            decoder = torch.nn.DataParallel(decoder)
 
     optimizer_D = optim.Adagrad(decoder.parameters(), lr=lr_D)
     optimizer_M_hat = optim.Adagrad(watermarked_model.parameters(), lr=lr_M_hat)
