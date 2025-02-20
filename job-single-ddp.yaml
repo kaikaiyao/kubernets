@@ -1,0 +1,59 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${USER}-job-single-run
+  labels:
+    eidf/user: ${USER}
+    kueue.x-k8s.io/queue-name: ${INFK8S_QUEUE_NAME}
+    kueue.x-k8s.io/priority-class: batch-workload-priority
+spec:
+  completions: 1
+  parallelism: 1
+  backoffLimit: 2147483647
+  activeDeadlineSeconds: 86400
+  template:
+    metadata:
+      labels:
+        eidf/user: ${USER}
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      containers:
+        - name: my-app
+          image: kaiyaoed/my_app:latest
+          workingDir: "/workspace/kubernets"
+          env:
+            - name: MAX_DELTA
+              value: "0.1"
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              echo "Running experiment with max_delta=$MAX_DELTA"
+              mkdir -p /workspace/kubernets/results/single-run
+              python -u main.py train \
+                --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
+                --batch_size=8 \
+                --n_iterations=200000 \
+                --num_eval_samples=10000 \
+                --num_conv_layers=7 \
+                --num_pool_layers=7 \
+                --initial_channels=64 \
+                --lr_M_hat=2e-4 \
+                --lr_D=2e-4 \
+                --max_delta=$MAX_DELTA \
+                --saving_path=results/single-run \
+                --convergence_threshold=0.0000001 \
+                --mask_switch=True || { echo "Error occurred, sleeping indefinitely"; sleep infinity; }
+          resources:
+            limits:
+              nvidia.com/gpu: "4"  # Using 4 GPUs
+              cpu: "4"
+              memory: "16Gi"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace/kubernets/results
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: ${USER}-ws1
