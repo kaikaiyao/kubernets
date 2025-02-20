@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
- name: $PVCNAME
- labels:
-   eidf/user: $USER
+  name: $PVCNAME
+  labels:
+    eidf/user: $USER
 spec:
- accessModes:
-  - ReadWriteOnce
- resources:
-  requests:
-   storage: $STORAGE
- storageClassName: csi-rbd-sc
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: $STORAGE
+  storageClassName: csi-rbd-sc
