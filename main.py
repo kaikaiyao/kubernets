@@ -12,6 +12,15 @@ from training.train_model import train_model
 from evaluation.evaluate_model import evaluate_model
 from evaluation.attacks import black_box_attack_binary_based
 
+# Add this helper function at the top
+def initialize_cuda():
+    if torch.cuda.is_available():
+        # Force CUDA initialization
+        torch.cuda.init()
+        # Create a dummy tensor to ensure context creation
+        torch.zeros(1).cuda()
+        return torch.device("cuda")
+    return torch.device("cpu")
 
 def main():
     parser = argparse.ArgumentParser(description="Run training or evaluation for the model.")
@@ -76,8 +85,13 @@ def main():
     pprint.pprint(vars(args))
     print("============================\n")
     
+    # Modified device initialization
+    device = initialize_cuda()
+    print(f"Using device: {device}")
+
     # Call the function to print GPU info
     get_gpu_info()
+
 
     if args.mode == "train":
         print(f"PyTorch version: {torch.__version__}")
@@ -85,9 +99,9 @@ def main():
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        k_auth = torch.tensor([0])
+        # Modified k_auth initialization
+        k_auth = torch.tensor([0], device=device)  # Create directly on device
         print(f"k_auth = {k_auth}")
-        k_auth = k_auth.to(device)
 
         if args.self_trained:
             latent_dim = args.self_trained_latent_dim
