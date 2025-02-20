@@ -56,4 +56,4 @@ spec:
       volumes:
         - name: workspace
           persistentVolumeClaim:
-            claimName: ${USER}-ws1
+            claimName: ${USER}-ws-ddp
