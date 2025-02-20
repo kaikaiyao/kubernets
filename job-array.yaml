@@ -52,7 +52,11 @@ spec:
                 --max_delta=$max_delta \
                 --saving_path=results/$JOB_COMPLETION_INDEX \
                 --convergence_threshold=0.0000001 \
-                --mask_switch=True || { echo "Error occurred, sleeping indefinitely"; sleep infinity; }
+                --mask_switch=True
+              # Capture the exit status of the Python script
+              exit_status=$?
+              echo "Python script finished with exit status $exit_status, sleeping indefinitely"
+              sleep infinity
           resources:
             limits:
               nvidia.com/gpu: "1"  # Each job uses 1 GPU
