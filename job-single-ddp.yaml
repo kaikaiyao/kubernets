@@ -6,6 +6,9 @@ metadata:
     eidf/user: ${USER}
     kueue.x-k8s.io/queue-name: ${INFK8S_QUEUE_NAME}
     kueue.x-k8s.io/priority-class: batch-workload-priority
+  annotations:
+    nvidia.com/mig.strategy: mixed
+    nvidia.com/mig.config: all-3g.20gb
 spec:
   completions: 1
   parallelism: 1
@@ -26,11 +29,21 @@ spec:
           env:
             - name: MAX_DELTA
               value: "0.1"
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: all
+            - name: CUDA_DEVICE_ORDER
+              value: PCI_BUS_ID
           command: ["/bin/bash", "-c"]
           args:
             - |
               echo "Running experiment with max_delta=$MAX_DELTA"
               mkdir -p /workspace/kubernets/results/single-run
+              
+              # Get visible GPUs
+              GPUS=$(nvidia-smi --query-gpu=index --format=csv,noheader | tr '\n' ',')
+              export CUDA_VISIBLE_DEVICES=${GPUS%,}
+              echo "Visible GPUs: $CUDA_VISIBLE_DEVICES"
+              
               python3 -u main.py train \
                 --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
                 --batch_size=8 \
@@ -45,6 +58,7 @@ spec:
                 --saving_path=results/single-run \
                 --convergence_threshold=0.0000001 \
                 --mask_switch=True
+              
               # Capture the exit status of the Python script
               exit_status=$?
               echo "Python script finished with exit status $exit_status, sleeping indefinitely"
@@ -52,8 +66,8 @@ spec:
           resources:
             limits:
               nvidia.com/gpu: "4"  # Using 4 GPUs
-              cpu: "4"
-              memory: "16Gi"
+              cpu: "16"  # Increased CPU for multi-GPU
+              memory: "64Gi"  # Increased memory for multi-GPU
           volumeMounts:
             - name: workspace
               mountPath: /workspace/kubernets/results
