@@ -58,6 +58,12 @@ def train_model(
     logging.info(f"The decoder model's number of parameters is: {sum(p.numel() for p in decoder.parameters())}")
     logging.info(f"The convergence threshold is: {convergence_threshold}")
 
+    # Check if multiple GPUs are available and wrap models
+    if torch.cuda.device_count() > 1:
+        logging.info(f"Using {torch.cuda.device_count()} GPUs for training.")
+        watermarked_model = torch.nn.DataParallel(watermarked_model)
+        decoder = torch.nn.DataParallel(decoder)
+
     optimizer_D = optim.Adagrad(decoder.parameters(), lr=lr_D)
     optimizer_M_hat = optim.Adagrad(watermarked_model.parameters(), lr=lr_M_hat)
 
@@ -215,7 +221,9 @@ def train_model(
                         f"total_decoder_params: {total_decoder_params}"
                     )
                     
-                    save_finetuned_model(watermarked_model, saving_path, f'watermarked_model_{time_string}.pkl')
+                    # Save the underlying model if using DataParallel
+                    watermarked_model_to_save = watermarked_model.module if isinstance(watermarked_model, torch.nn.DataParallel) else watermarked_model
+                    save_finetuned_model(watermarked_model_to_save, saving_path, f'watermarked_model_{time_string}.pkl')
                     torch.save(decoder.state_dict(), os.path.join(saving_path, f'decoder_model_{time_string}.pth'))
                     logging.info(f"Models saved after convergence at iteration {i + 1}, time_string = {time_string}")
                 break
@@ -266,6 +274,8 @@ def train_model(
                 f"total_decoder_params: {total_decoder_params}"
             )
             
-            save_finetuned_model(watermarked_model, saving_path, f'watermarked_model_{time_string}.pkl')
+            # Save the underlying model if using DataParallel
+            watermarked_model_to_save = watermarked_model.module if isinstance(watermarked_model, torch.nn.DataParallel) else watermarked_model
+            save_finetuned_model(watermarked_model_to_save, saving_path, f'watermarked_model_{time_string}.pkl')
             torch.save(decoder.state_dict(), os.path.join(saving_path, f'decoder_model_{time_string}.pth'))
             logging.info(f"Models saved after training completion, time_string = {time_string}")
