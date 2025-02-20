@@ -156,6 +156,11 @@ envsubst '$USER $INFK8S_QUEUE_NAME' < job-array.yaml | kubectl create -f -
   kubectl describe quota
   ```
 
+- **Print Project for LLM**
+  ```bash
+  { tree && find . -name "*.py" -print0 | while IFS= read -r -d '' file; do echo "=== $file ==="; cat "$file"; done; } > project_structure_and_codes.txt
+  ```
+
 ---
 
 ✨ **Pro Tips**  
