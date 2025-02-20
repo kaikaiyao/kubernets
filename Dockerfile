@@ -66,6 +66,12 @@ ARG CACHEBUST=1
 RUN git clone https://github.com/kaikaiyao/kubernets.git /workspace/kubernets \
     && git clone https://github.com/NVlabs/stylegan2-ada-pytorch.git /workspace/kubernets/stylegan2-ada-pytorch
 
+# Create the parent directory and subdirectories for results
+RUN mkdir -p /workspace/kubernets/results && \
+    for i in {0..7}; do \
+        mkdir -p /workspace/kubernets/results/$i; \
+    done
+
 # Set working directory and default command
 WORKDIR /workspace/kubernets
 CMD ["true"]
