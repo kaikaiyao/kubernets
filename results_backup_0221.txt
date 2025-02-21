@@ -1,0 +1,58 @@
+s2470447-infk8s@eidf029-host1:~/kubernets$ kubectl logs s2470447-infk8s-job-ablation-0-f7nm2 | tail -10
+0.993000       0.002000       0.001500
+0.994000       0.001700       0.001300
+0.995000       0.001500       0.001000
+0.996000       0.001200       0.001000
+0.997000       0.001000       0.000700
+0.998000       0.000700       0.000300
+0.999000       0.000300       0.000300
+1.000000       0.000000       0.000000
+2025-02-21 13:28:45 - Eval after training completion at iteration 200000: AUC score: 0.5532, tpr_at_1_fpr: 0.0147, be
+st_threshold: 0.9441, best_threshold_tpr: 0.0147, loss_lpips_mean: 0.0035, fid_score: 0.1330, mean_max_delta: 0.0100,
+ total_decoder_params: 100652673
+2025-02-21 13:28:46 - Models saved after training completion, time_string = 20250220163000377530
+
+
+s2470447-infk8s@eidf029-host1:~/kubernets$ kubectl logs s2470447-infk8s-job-ablation-1-8mpcq | tail -10
+0.993000       0.001600       0.000300
+0.994000       0.001200       0.000100
+0.995000       0.001000       0.000100
+0.996000       0.000900       0.000100
+0.997000       0.000400       0.000100
+0.998000       0.000200       0.000000
+0.999000       0.000100       0.000000
+1.000000       0.000000       0.000000
+2025-02-21 14:03:00 - Eval after training completion at iteration 200000: AUC score: 0.6146, tpr_at_1_fpr: 0.0292, be
+st_threshold: 0.9048, best_threshold_tpr: 0.0292, loss_lpips_mean: 0.0149, fid_score: 0.4843, mean_max_delta: 0.0200,
+ total_decoder_params: 100652673
+2025-02-21 14:03:01 - Models saved after training completion, time_string = 20250220163000299464
+
+
+s2470447-infk8s@eidf029-host1:~/kubernets$ kubectl logs s2470447-infk8s-job-ablation-2-hfjnh | tail -10
+0.993000       0.004800       0.001400
+0.994000       0.004000       0.001300
+0.995000       0.002900       0.000900
+0.996000       0.002600       0.000800
+0.997000       0.002000       0.000600
+0.998000       0.001200       0.000400
+0.999000       0.000700       0.000300
+1.000000       0.000000       0.000000
+2025-02-21 13:27:54 - Eval after training completion at iteration 200000: AUC score: 0.6887, tpr_at_1_fpr: 0.0343, be
+st_threshold: 0.8965, best_threshold_tpr: 0.0343, loss_lpips_mean: 0.0313, fid_score: 1.4026, mean_max_delta: 0.0500,
+ total_decoder_params: 100652673
+2025-02-21 13:27:55 - Models saved after training completion, time_string = 20250220163000046927
+
+
+s2470447-infk8s@eidf029-host1:~/kubernets$ kubectl logs s2470447-infk8s-job-ablation-3-7jmcz | tail -10
+^[[A0.993000       0.030400       0.000000
+0.994000       0.028300       0.000000
+0.995000       0.025400       0.000000
+0.996000       0.022000       0.000000
+0.997000       0.018500       0.000000
+0.998000       0.013100       0.000000
+0.999000       0.008300       0.000000
+1.000000       0.000000       0.000000
+2025-02-21 13:36:31 - Eval after training completion at iteration 200000: AUC score: 0.8432, tpr_at_1_fpr: 0.2217, be
+st_threshold: 0.8024, best_threshold_tpr: 0.2217, loss_lpips_mean: 0.0711, fid_score: 3.5177, mean_max_delta: 0.1000,
+ total_decoder_params: 100652673
+2025-02-21 13:36:32 - Models saved after training completion, time_string = 20250220162959981881
