@@ -62,10 +62,12 @@ def main():
     parser.add_argument("--lr_M_hat", type=float, default=1e-4, help="Learning rate for the watermarked model")
     parser.add_argument("--lr_D", type=float, default=1e-4, help="Learning rate for the decoder")
     parser.add_argument("--max_delta", type=float, default=0.01, help="Maximum allowed change per pixel (infinite norm constraint)")
-    parser.add_argument("--run_eval", type=bool, default=True, help="Run evaluation function during training")
+    parser.add_argument("--run_eval", type=bool, default=False, help="Run evaluation function during training")
     parser.add_argument("--convergence_threshold", type=float, default=0.005, help="Threshold between loss_key diff of each 2000 epochs to determine convergence.")
     parser.add_argument("--mask_switch", type=bool, default=False, help="To apply the new masking pipeline")
     parser.add_argument("--mask_threshold", type=float, default=0.2, help="Threshold for mask")
+    # Add in the training arguments section of main.py
+    parser.add_argument("--resume_checkpoint", type=str, help="Path to a checkpoint file to resume training")
 
     # Evaluation arguments
     parser.add_argument("--num_eval_samples", type=int, default=100, help="Number of images to evaluate")
@@ -107,6 +109,32 @@ def main():
             device = torch.device("cpu")
 
     if args.mode == "train":
+        
+        
+        from torch import optim
+        optimizer_D = optim.Adagrad(decoder.parameters(), lr=args.lr_D)
+        optimizer_M_hat = optim.Adagrad(watermarked_model.parameters(), lr=args.lr_M_hat)
+
+        start_iter = 0
+        initial_loss_history = []
+
+        if args.resume_checkpoint:
+            checkpoint = torch.load(args.resume_checkpoint, map_location=device)
+            
+            # Load model states
+            watermarked_model.load_state_dict(checkpoint['watermarked_model'])
+            decoder.load_state_dict(checkpoint['decoder'])
+            
+            # Load optimizer states
+            optimizer_M_hat.load_state_dict(checkpoint['optimizer_M_hat'])
+            optimizer_D.load_state_dict(checkpoint['optimizer_D'])
+            
+            start_iter = checkpoint['iteration'] + 1
+            initial_loss_history = checkpoint['loss_key_history']
+            
+            print(f"Resuming training from iteration {start_iter}")
+
+
         print(f"PyTorch version: {torch.__version__}")
         print(f"PyTorch detected CUDA version: {torch.version.cuda}")
 
@@ -147,6 +175,10 @@ def main():
                 args.mask_switch,
                 args.seed_key,
                 args.mask_threshold,
+                optimizer_M_hat,  # Pass optimizers
+                optimizer_D,
+                start_iter,       # Pass start_iter
+                initial_loss_history,  # Pass loss history
             )
         else:
             local_path = args.stylegan2_url.split('/')[-1]
@@ -183,6 +215,10 @@ def main():
                 args.mask_switch,
                 args.seed_key,
                 args.mask_threshold,
+                optimizer_M_hat,  # Pass optimizers
+                optimizer_D,
+                start_iter,       # Pass start_iter
+                initial_loss_history,  # Pass loss history
             )
 
     elif args.mode == "eval":

@@ -1,5 +1,4 @@
 import torch
-from torch import optim
 import os
 import gc
 import numpy as np
@@ -38,6 +37,10 @@ def train_model(
     mask_switch,
     seed_key,
     mask_threshold,
+    optimizer_M_hat,  # Added
+    optimizer_D,      # Added
+    start_iter=0,     # Added
+    initial_loss_history=None,  # Added
 ):
     # Enable performance optimizations
     if device.type == "cuda":
@@ -74,9 +77,6 @@ def train_model(
             watermarked_model = torch.nn.DataParallel(watermarked_model)
             decoder = torch.nn.DataParallel(decoder)
 
-    optimizer_D = optim.Adagrad(decoder.parameters(), lr=lr_D)
-    optimizer_M_hat = optim.Adagrad(watermarked_model.parameters(), lr=lr_M_hat)
-
     gan_model.eval()
     watermarked_model.train()
     decoder.train()
@@ -87,7 +87,10 @@ def train_model(
     loss_key_history = []
     converged = False
 
-    for i in range(n_iterations):
+    # Initialize loss history
+    loss_key_history = initial_loss_history if initial_loss_history is not None else []
+
+    for i in range(start_iter, n_iterations):
         torch.cuda.empty_cache()
         gc.collect()
 
@@ -233,6 +236,19 @@ def train_model(
                     
                     # Save the underlying model if using DataParallel
                     watermarked_model_to_save = watermarked_model.module if isinstance(watermarked_model, torch.nn.DataParallel) else watermarked_model
+
+                    checkpoint = {
+                        'watermarked_model': watermarked_model_to_save.state_dict(),
+                        'decoder': decoder.state_dict(),
+                        'optimizer_M_hat': optimizer_M_hat.state_dict(),
+                        'optimizer_D': optimizer_D.state_dict(),
+                        'iteration': i,
+                        'loss_key_history': loss_key_history,
+                    }
+
+                    checkpoint_path = os.path.join(saving_path, f'checkpoint_{time_string}.pt')
+                    torch.save(checkpoint, checkpoint_path)
+
                     save_finetuned_model(watermarked_model_to_save, saving_path, f'watermarked_model_{time_string}.pkl')
                     torch.save(decoder.state_dict(), os.path.join(saving_path, f'decoder_model_{time_string}.pth'))
                     logging.info(f"Models saved after convergence at iteration {i + 1}, time_string = {time_string}")
@@ -286,6 +302,16 @@ def train_model(
             
             # Save the underlying model if using DataParallel
             watermarked_model_to_save = watermarked_model.module if isinstance(watermarked_model, torch.nn.DataParallel) else watermarked_model
+    
+            checkpoint = {
+                'watermarked_model': watermarked_model_to_save.state_dict(),
+                'decoder': decoder.state_dict(),
+                'optimizer_M_hat': optimizer_M_hat.state_dict(),
+                'optimizer_D': optimizer_D.state_dict(),
+                'iteration': i,
+                'loss_key_history': loss_key_history,
+            }
+            
             save_finetuned_model(watermarked_model_to_save, saving_path, f'watermarked_model_{time_string}.pkl')
             torch.save(decoder.state_dict(), os.path.join(saving_path, f'decoder_model_{time_string}.pth'))
             logging.info(f"Models saved after training completion, time_string = {time_string}")
