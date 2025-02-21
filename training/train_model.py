@@ -39,12 +39,6 @@ def train_model(
     seed_key,
     mask_threshold,
 ):
-    # Enable performance optimizations
-    if device.type == "cuda":
-        torch.backends.cudnn.benchmark = True
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
-
     # Generate time_string early for logging
     time_string = generate_time_based_string()
     
