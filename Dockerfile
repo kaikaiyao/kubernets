@@ -39,8 +39,8 @@ ENV NVIDIA_VISIBLE_DEVICES=all
 # Install PyTorch 2.6.0 with CUDA 12.6 compatibility
 RUN pip3 install --no-cache-dir \
     torch==2.6.0 \
-    torchvision==0.18.0 \
-    torchaudio==2.6.0 \
+    torchvision==0.17.0 \
+    torchaudio==2.1.0 \
     --index-url https://download.pytorch.org/whl/cu126  # Updated to cu126
 
 # Install remaining Python dependencies
