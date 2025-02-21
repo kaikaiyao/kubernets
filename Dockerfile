@@ -24,8 +24,6 @@ RUN apt-get install -y software-properties-common && \
     python3.10 \
     python3-pip \
     python3-dev \
-    nvidia-fabricmanager-535 \
-    nvidia-driver-535 \
     && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 \
     && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100 \
     && rm -rf /var/lib/apt/lists/*
@@ -33,15 +31,17 @@ RUN apt-get install -y software-properties-common && \
 # Configure CUDA paths and MIG capabilities
 ENV PATH="/usr/local/cuda/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
+ENV CUDA_VERSION=12.6
+ENV CUDA_HOME=/usr/local/cuda
 ENV NVIDIA_DISABLE_REQUIRE=1
 ENV NVIDIA_VISIBLE_DEVICES=all
 
-# Install PyTorch 2.3 with CUDA 12.1 compatibility
+# Install PyTorch 2.3 with CUDA 12.6 compatibility
 RUN pip3 install --no-cache-dir \
     torch==2.3.0 \
     torchvision==0.18.0 \
     torchaudio==2.3.0 \
-    --index-url https://download.pytorch.org/whl/cu121
+    --index-url https://download.pytorch.org/whl/cu126  # Updated to cu126
 
 # Install remaining Python dependencies
 RUN pip install --no-cache-dir \
