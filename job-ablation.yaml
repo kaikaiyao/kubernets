@@ -58,7 +58,7 @@ spec:
               memory: "16Gi"
           volumeMounts:
             - name: workspace
-              mountPath: /workspace/kubernets
+              mountPath: /workspace/kubernets/results
       volumes:
         - name: workspace
           persistentVolumeClaim:
