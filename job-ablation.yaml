@@ -31,12 +31,13 @@ spec:
           args:
             - |
               echo "Running experiment with max_delta=$MAX_DELTA"
-              # Use a subdirectory based on the job index
               mkdir -p /workspace/kubernets/results
+              # Copy the checkpoint file from the NFS volume to the PVC
+              cp /nfs/user/s2470447-infk8s/data/checkpoint_20250221204015484235.pt /workspace/kubernets/results/checkpoint_20250221204015484235.pt
               python3 -u main.py train \
                 --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
                 --batch_size=8 \
-                --n_iterations=300 \
+                --n_iterations=600 \
                 --num_eval_samples=10000 \
                 --num_conv_layers=7 \
                 --num_pool_layers=7 \
@@ -47,9 +48,7 @@ spec:
                 --saving_path=results \
                 --convergence_threshold=0.0000001 \
                 --mask_switch=True \
-                --resume_checkpoint=/nfs/user/s2470447-infk8s/data/checkpoint_20250221204015484235.pt \
-                --n_iterations=600
-              # Capture the exit status of the Python script
+                --resume_checkpoint=/workspace/kubernets/results/checkpoint_20250221204015484235.pt
               exit_status=$?
               echo "Python script finished with exit status $exit_status, sleeping indefinitely"
               sleep infinity
@@ -61,7 +60,13 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace/kubernets/results
+            - name: nfs-user
+              mountPath: /nfs-user
       volumes:
         - name: workspace
           persistentVolumeClaim:
-            claimName: ${USER}-ws-${INDEX}  # Use a unique PVC for each job
+            claimName: ${USER}-ws-${INDEX}
+        - name: nfs-user
+          nfs:
+            server: $INFK8S_NFS_SERVER_IP
+            path: /user/$USER
