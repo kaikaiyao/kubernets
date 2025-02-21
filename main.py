@@ -109,31 +109,6 @@ def main():
             device = torch.device("cpu")
 
     if args.mode == "train":
-        
-        
-        from torch import optim
-        optimizer_D = optim.Adagrad(decoder.parameters(), lr=args.lr_D)
-        optimizer_M_hat = optim.Adagrad(watermarked_model.parameters(), lr=args.lr_M_hat)
-
-        start_iter = 0
-        initial_loss_history = []
-
-        if args.resume_checkpoint:
-            checkpoint = torch.load(args.resume_checkpoint, map_location=device)
-            
-            # Load model states
-            watermarked_model.load_state_dict(checkpoint['watermarked_model'])
-            decoder.load_state_dict(checkpoint['decoder'])
-            
-            # Load optimizer states
-            optimizer_M_hat.load_state_dict(checkpoint['optimizer_M_hat'])
-            optimizer_D.load_state_dict(checkpoint['optimizer_D'])
-            
-            start_iter = checkpoint['iteration'] + 1
-            initial_loss_history = checkpoint['loss_key_history']
-            
-            print(f"Resuming training from iteration {start_iter}")
-
 
         print(f"PyTorch version: {torch.__version__}")
         print(f"PyTorch detected CUDA version: {torch.version.cuda}")
@@ -152,6 +127,30 @@ def main():
                 args.num_pool_layers,
                 args.initial_channels,
             ).to(device)
+
+            
+            from torch import optim
+            optimizer_D = optim.Adagrad(decoder.parameters(), lr=args.lr_D)
+            optimizer_M_hat = optim.Adagrad(watermarked_model.parameters(), lr=args.lr_M_hat)
+
+            start_iter = 0
+            initial_loss_history = []
+
+            if args.resume_checkpoint:
+                checkpoint = torch.load(args.resume_checkpoint, map_location=device)
+                
+                # Load model states
+                watermarked_model.load_state_dict(checkpoint['watermarked_model'])
+                decoder.load_state_dict(checkpoint['decoder'])
+                
+                # Load optimizer states
+                optimizer_M_hat.load_state_dict(checkpoint['optimizer_M_hat'])
+                optimizer_D.load_state_dict(checkpoint['optimizer_D'])
+                
+                start_iter = checkpoint['iteration'] + 1
+                initial_loss_history = checkpoint['loss_key_history']
+                
+                print(f"Resuming training from iteration {start_iter}")
 
             print(f"Original model's latent_dim: {latent_dim}")
 
@@ -190,6 +189,31 @@ def main():
                 args.num_pool_layers,
                 args.initial_channels,
             ).to(device)
+
+
+            from torch import optim
+            optimizer_D = optim.Adagrad(decoder.parameters(), lr=args.lr_D)
+            optimizer_M_hat = optim.Adagrad(watermarked_model.parameters(), lr=args.lr_M_hat)
+
+            start_iter = 0
+            initial_loss_history = []
+
+            if args.resume_checkpoint:
+                checkpoint = torch.load(args.resume_checkpoint, map_location=device)
+                
+                # Load model states
+                watermarked_model.load_state_dict(checkpoint['watermarked_model'])
+                decoder.load_state_dict(checkpoint['decoder'])
+                
+                # Load optimizer states
+                optimizer_M_hat.load_state_dict(checkpoint['optimizer_M_hat'])
+                optimizer_D.load_state_dict(checkpoint['optimizer_D'])
+                
+                start_iter = checkpoint['iteration'] + 1
+                initial_loss_history = checkpoint['loss_key_history']
+                
+                print(f"Resuming training from iteration {start_iter}")
+
 
             latent_dim = gan_model.z_dim
             print(f"Original model's latent_dim: {latent_dim}")
