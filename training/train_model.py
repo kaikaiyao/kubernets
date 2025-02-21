@@ -64,6 +64,9 @@ def train_model(
     watermarked_model = watermarked_model.to(device=device, memory_format=torch.channels_last)
     decoder = decoder.to(device=device, memory_format=torch.channels_last)
     
+    # Compile models for PyTorch 2.0+ (wrap original model to preserve StyleGAN2 checks)
+    original_gan_is_stylegan2 = is_stylegan2(gan_model)
+    
     # Compile models for PyTorch 2.0+
     if hasattr(torch, 'compile'):
         watermarked_model = torch.compile(watermarked_model)
@@ -86,13 +89,14 @@ def train_model(
         z = torch.randn((batch_size, latent_dim), device=device)
 
         with torch.no_grad():
-            if is_stylegan2(gan_model):
+            if original_gan_is_stylegan2:
                 x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
             else:
                 x_M = gan_model(z)
 
         with torch.cuda.amp.autocast():
-            if is_stylegan2(watermarked_model):
+            # Use the original GAN model's StyleGAN2 status for both models
+            if original_gan_is_stylegan2:
                 x_M_hat = watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
             else:
                 x_M_hat = watermarked_model(z)
