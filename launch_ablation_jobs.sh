@@ -1,7 +1,7 @@
 #!/bin/bash
 
 STORAGE="250Gi"
-DELTA_VALUES=("0.2" "0.5" "1.0" "2.0")
+DELTA_VALUES=("0.2")
 
 for i in "${!DELTA_VALUES[@]}"; do
   MAX_DELTA=${DELTA_VALUES[$i]}
