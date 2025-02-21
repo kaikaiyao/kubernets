@@ -3,7 +3,6 @@ from torch import optim
 import os
 import numpy as np
 import logging
-import gc
 
 from utils.model_utils import save_finetuned_model
 from utils.loss_functions import get_key_loss
@@ -61,14 +60,14 @@ def train_model(
     logging.info(f"The decoder model's number of parameters is: {sum(p.numel() for p in decoder.parameters())}")
     logging.info(f"The convergence threshold is: {convergence_threshold}")
 
-    # Move models to device
-    watermarked_model = watermarked_model.to(device=device)
-    decoder = decoder.to(device=device)
+    # Move models to device with channels-last memory format and compile
+    watermarked_model = watermarked_model.to(device=device, memory_format=torch.channels_last)
+    decoder = decoder.to(device=device, memory_format=torch.channels_last)
     
     # Compile models for PyTorch 2.0+
     if hasattr(torch, 'compile'):
-        watermarked_model = torch.compile(watermarked_model, mode='reduce-overhead')
-        decoder = torch.compile(decoder, mode='reduce-overhead')
+        watermarked_model = torch.compile(watermarked_model)
+        decoder = torch.compile(decoder)
 
     optimizer_D = optim.Adagrad(decoder.parameters(), lr=lr_D)
     optimizer_M_hat = optim.Adagrad(watermarked_model.parameters(), lr=lr_M_hat)
@@ -78,36 +77,27 @@ def train_model(
     decoder.train()
 
     # Initialize mixed precision scaler
-    scaler = torch.cuda.amp.GradScaler(growth_interval=2000)
+    scaler = torch.cuda.amp.GradScaler()
 
     loss_key_history = []
     converged = False
 
     for i in range(n_iterations):
-        z = torch.randn((batch_size, latent_dim), device=device, dtype=torch.float32)
+        z = torch.randn((batch_size, latent_dim), device=device)
 
-        with torch.no_grad(), torch.cuda.amp.autocast():
+        with torch.no_grad():
             if is_stylegan2(gan_model):
                 x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
             else:
                 x_M = gan_model(z)
 
-        # Modified forward pass with memory optimizations
         with torch.cuda.amp.autocast():
-            try:
-                if is_stylegan2(watermarked_model):
-                    x_M_hat = watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
-                else:
-                    x_M_hat = watermarked_model(z)
-                
-                x_M_hat_constrained = constrain_image(x_M_hat, x_M, max_delta)
-            except RuntimeError as e:
-                if 'CUDA out of memory' in str(e):
-                    torch.cuda.empty_cache()
-                    gc.collect()
-                    continue
-                else:
-                    raise
+            if is_stylegan2(watermarked_model):
+                x_M_hat = watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
+            else:
+                x_M_hat = watermarked_model(z)
+            
+            x_M_hat_constrained = constrain_image(x_M_hat, x_M, max_delta)
 
         if mask_switch:
             if i == 0:
@@ -156,39 +146,21 @@ def train_model(
         x_M = x_M.detach()
 
         with torch.cuda.amp.autocast():
-            try:
-                k_M = decoder(x_M.contiguous())
-                k_M_hat = decoder(x_M_hat_constrained.contiguous())
-            except RuntimeError as e:
-                if 'CUDA out of memory' in str(e):
-                    torch.cuda.empty_cache()
-                    gc.collect()
-                    continue
-                else:
-                    raise
+            k_M = decoder(x_M)
+            k_M_hat = decoder(x_M_hat_constrained)
 
         d_k_M_hat = torch.norm(k_auth.unsqueeze(0).expand(batch_size, -1) - k_M_hat, dim=1) / torch.sqrt(torch.tensor(len(k_auth), dtype=torch.float32, device=device))
         d_k_M = torch.norm(k_auth.unsqueeze(0).expand(batch_size, -1) - k_M, dim=1) / torch.sqrt(torch.tensor(len(k_auth), dtype=torch.float32, device=device))
 
         loss_key = get_key_loss(d_k_M_hat, d_k_M)
 
-        # Modified backward pass with memory optimizations
         optimizer_M_hat.zero_grad(set_to_none=True)
         optimizer_D.zero_grad(set_to_none=True)
 
-        try:
-            scaler.scale(loss_key).backward()
-            scaler.step(optimizer_M_hat)
-            scaler.step(optimizer_D)
-            scaler.update()
-        except RuntimeError as e:
-            if 'CUDA out of memory' in str(e):
-                torch.cuda.empty_cache()
-                gc.collect()
-                scaler.update()
-                continue
-            else:
-                raise
+        scaler.scale(loss_key).backward()
+        scaler.step(optimizer_M_hat)
+        scaler.step(optimizer_D)
+        scaler.update()
 
         loss_key_history.append(loss_key.item())
 
