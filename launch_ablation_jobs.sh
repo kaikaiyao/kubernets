@@ -7,18 +7,12 @@ STORAGE="250Gi"
 DELTA_VALUES=("0.2")
 
 for i in "${!DELTA_VALUES[@]}"; do
-  MAX_DELTA=${DELTA_VALUES[$i]}
-  INDEX=$i
+    MAX_DELTA=${DELTA_VALUES[$i]}
+    INDEX=$i
 
-  # Create PVC
-  PVC_YAML=$(envsubst '$USER $INDEX $STORAGE' < pvc-ablation.yml)
-  echo "Creating PVC for INDEX=$INDEX"
-  echo "$PVC_YAML"
-  echo "$PVC_YAML" | kubectl create -f -
+    # Create PVC
+    sed "s/\$USER/$USER/g; s/\$INDEX/$INDEX/g; s/\$STORAGE/$STORAGE/g" pvc-ablation.yml | kubectl create -f -
 
-  # Create Job
-  JOB_YAML=$(envsubst '$USER $INFK8S_QUEUE_NAME $INDEX $MAX_DELTA' < job-ablation.yaml)
-  echo "Creating Job for INDEX=$INDEX"
-  echo "$JOB_YAML"
-  echo "$JOB_YAML" | kubectl create -f -
+    # Create Job
+    sed "s/\$USER/$USER/g; s/\$INFK8S_QUEUE_NAME/$INFK8S_QUEUE_NAME/g; s/\$INDEX/$INDEX/g; s/\$MAX_DELTA/$MAX_DELTA/g" job-ablation.yaml | kubectl create -f -
 done
