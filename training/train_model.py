@@ -1,8 +1,9 @@
 import torch
 from torch import optim
 import os
+import gc
 import numpy as np
-import logging
+import logging  # Added logging import
 
 from utils.model_utils import save_finetuned_model
 from utils.loss_functions import get_key_loss
@@ -39,9 +40,10 @@ def train_model(
     mask_threshold,
 ):
     # Enable performance optimizations
-    torch.backends.cudnn.benchmark = True
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
 
     # Generate time_string early for logging
     time_string = generate_time_based_string()
@@ -51,26 +53,26 @@ def train_model(
     
     # Set up logging
     log_file = os.path.join(saving_path, f'training_log_{time_string}.txt')
-    setup_logging(log_file)
+    setup_logging(log_file)  # Call the logging setup function
+    
+    # Print max_delta (might need a better restructure of logging code altogether later)
+    logging.info(f"max_delta = {max_delta}")
 
     # Log initial configuration
-    logging.info(f"max_delta = {max_delta}")
     logging.info(f"time_string = {time_string}")
     logging.info("The decoder structure is:\n%s", decoder)
     logging.info(f"The decoder model's number of parameters is: {sum(p.numel() for p in decoder.parameters())}")
     logging.info(f"The convergence threshold is: {convergence_threshold}")
 
-    # Move models to device with channels-last memory format and compile
-    watermarked_model = watermarked_model.to(device=device, memory_format=torch.channels_last)
-    decoder = decoder.to(device=device, memory_format=torch.channels_last)
-    
-    # Compile models for PyTorch 2.0+ (wrap original model to preserve StyleGAN2 checks)
-    original_gan_is_stylegan2 = is_stylegan2(gan_model)
-    
-    # Compile models for PyTorch 2.0+
-    if hasattr(torch, 'compile'):
-        watermarked_model = torch.compile(watermarked_model)
-        decoder = torch.compile(decoder)
+    # Check CUDA status before wrapping models
+    if device.type == "cuda":
+        # Verify device count matches expectations
+        available_devices = torch.cuda.device_count()
+        print(f"Training with {available_devices} GPUs")
+        
+        if available_devices > 1:
+            watermarked_model = torch.nn.DataParallel(watermarked_model)
+            decoder = torch.nn.DataParallel(decoder)
 
     optimizer_D = optim.Adagrad(decoder.parameters(), lr=lr_D)
     optimizer_M_hat = optim.Adagrad(watermarked_model.parameters(), lr=lr_M_hat)
@@ -79,29 +81,30 @@ def train_model(
     watermarked_model.train()
     decoder.train()
 
-    # Initialize mixed precision scaler
-    scaler = torch.cuda.amp.GradScaler()
+    for param in watermarked_model.parameters():
+        param.requires_grad = True
 
     loss_key_history = []
     converged = False
 
     for i in range(n_iterations):
+        torch.cuda.empty_cache()
+        gc.collect()
+
         z = torch.randn((batch_size, latent_dim), device=device)
 
         with torch.no_grad():
-            if original_gan_is_stylegan2:
+            if is_stylegan2(gan_model):
                 x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
             else:
                 x_M = gan_model(z)
 
-        with torch.cuda.amp.autocast():
-            # Use the original GAN model's StyleGAN2 status for both models
-            if original_gan_is_stylegan2:
-                x_M_hat = watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
-            else:
-                x_M_hat = watermarked_model(z)
-            
-            x_M_hat_constrained = constrain_image(x_M_hat, x_M, max_delta)
+        if is_stylegan2(gan_model):
+            x_M_hat = watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
+        else:
+            x_M_hat = watermarked_model(z)
+        
+        x_M_hat_constrained = constrain_image(x_M_hat, x_M, max_delta)
 
         if mask_switch:
             if i == 0:
@@ -113,7 +116,7 @@ def train_model(
             x_M = mask_image_with_key(x_M, k_mask)
             x_M_hat_constrained = mask_image_with_key(x_M_hat_constrained, k_mask)
 
-            if i == 0:
+            if i == 0 or i == 99999:
                 os.makedirs(saving_path, exist_ok=True)
                 with PdfPages(os.path.join(saving_path, 'first_iteration_images.pdf')) as pdf:
                     fig, axes = plt.subplots(4, 8, figsize=(20, 12))
@@ -149,22 +152,28 @@ def train_model(
 
         x_M = x_M.detach()
 
-        with torch.cuda.amp.autocast():
-            k_M = decoder(x_M)
-            k_M_hat = decoder(x_M_hat_constrained)
+        k_M = decoder(x_M)
+        k_M_hat = decoder(x_M_hat_constrained)
+
+        del x_M, x_M_hat, x_M_hat_constrained
+        torch.cuda.empty_cache()
 
         d_k_M_hat = torch.norm(k_auth.unsqueeze(0).expand(batch_size, -1) - k_M_hat, dim=1) / torch.sqrt(torch.tensor(len(k_auth), dtype=torch.float32, device=device))
         d_k_M = torch.norm(k_auth.unsqueeze(0).expand(batch_size, -1) - k_M, dim=1) / torch.sqrt(torch.tensor(len(k_auth), dtype=torch.float32, device=device))
+
+        del k_M, k_M_hat
+        torch.cuda.empty_cache()
 
         loss_key = get_key_loss(d_k_M_hat, d_k_M)
 
         optimizer_M_hat.zero_grad(set_to_none=True)
         optimizer_D.zero_grad(set_to_none=True)
 
-        scaler.scale(loss_key).backward()
-        scaler.step(optimizer_M_hat)
-        scaler.step(optimizer_D)
-        scaler.update()
+        loss = loss_key
+        loss.backward()
+
+        optimizer_M_hat.step()
+        optimizer_D.step()
 
         loss_key_history.append(loss_key.item())
 
@@ -174,6 +183,9 @@ def train_model(
             f"d_k_M_hat.max(): {d_k_M_hat.max().item():.4f}, "
             f"d_k_M.min(): {d_k_M.min().item():.4f}"
         )
+
+        del loss, loss_key, d_k_M_hat, d_k_M
+        torch.cuda.empty_cache()
 
         if (i + 1) % 2000 == 0 and (i + 1) >= 4000:
             current_avg_loss_key = np.mean(loss_key_history[-2000:])
@@ -219,7 +231,9 @@ def train_model(
                         f"total_decoder_params: {total_decoder_params}"
                     )
                     
-                    save_finetuned_model(watermarked_model, saving_path, f'watermarked_model_{time_string}.pkl')
+                    # Save the underlying model if using DataParallel
+                    watermarked_model_to_save = watermarked_model.module if isinstance(watermarked_model, torch.nn.DataParallel) else watermarked_model
+                    save_finetuned_model(watermarked_model_to_save, saving_path, f'watermarked_model_{time_string}.pkl')
                     torch.save(decoder.state_dict(), os.path.join(saving_path, f'decoder_model_{time_string}.pth'))
                     logging.info(f"Models saved after convergence at iteration {i + 1}, time_string = {time_string}")
                 break
@@ -270,6 +284,8 @@ def train_model(
                 f"total_decoder_params: {total_decoder_params}"
             )
             
-            save_finetuned_model(watermarked_model, saving_path, f'watermarked_model_{time_string}.pkl')
+            # Save the underlying model if using DataParallel
+            watermarked_model_to_save = watermarked_model.module if isinstance(watermarked_model, torch.nn.DataParallel) else watermarked_model
+            save_finetuned_model(watermarked_model_to_save, saving_path, f'watermarked_model_{time_string}.pkl')
             torch.save(decoder.state_dict(), os.path.join(saving_path, f'decoder_model_{time_string}.pth'))
             logging.info(f"Models saved after training completion, time_string = {time_string}")

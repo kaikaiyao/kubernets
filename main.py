@@ -14,7 +14,6 @@ from training.train_model import train_model
 from evaluation.evaluate_model import evaluate_model
 from evaluation.attacks import black_box_attack_binary_based
 
-
 # Then modify the initialize_cuda function
 def initialize_cuda():
     try:
