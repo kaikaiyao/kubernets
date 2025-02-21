@@ -36,11 +36,11 @@ ENV CUDA_HOME=/usr/local/cuda
 ENV NVIDIA_DISABLE_REQUIRE=1
 ENV NVIDIA_VISIBLE_DEVICES=all
 
-# Install PyTorch 2.3 with CUDA 12.6 compatibility
+# Install PyTorch 2.6.0 with CUDA 12.6 compatibility
 RUN pip3 install --no-cache-dir \
-    torch==2.3.0 \
+    torch==2.6.0 \
     torchvision==0.18.0 \
-    torchaudio==2.3.0 \
+    torchaudio==2.6.0 \
     --index-url https://download.pytorch.org/whl/cu126  # Updated to cu126
 
 # Install remaining Python dependencies
