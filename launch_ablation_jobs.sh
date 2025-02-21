@@ -1,5 +1,7 @@
 #!/bin/bash
 
+USER="s2470447-infk8s"
+INFK8S_QUEUE_NAME="informatics-user-queue"
 STORAGE="250Gi"
 DELTA_VALUES=("0.2")
 
