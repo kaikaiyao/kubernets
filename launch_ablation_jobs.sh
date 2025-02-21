@@ -10,9 +10,22 @@ for i in "${!DELTA_VALUES[@]}"; do
     MAX_DELTA=${DELTA_VALUES[$i]}
     INDEX=$i
 
+    # Create temporary files for PVC and Job
+    PVC_TEMP_FILE=$(mktemp)
+    JOB_TEMP_FILE=$(mktemp)
+
+    # Substitute variables in PVC template
+    sed "s/\$USER/$USER/g; s/\$INDEX/$INDEX/g; s/\$STORAGE/$STORAGE/g" pvc-ablation.yml > "$PVC_TEMP_FILE"
+
+    # Substitute variables in Job template
+    sed "s/\$USER/$USER/g; s/\$INFK8S_QUEUE_NAME/$INFK8S_QUEUE_NAME/g; s/\$INDEX/$INDEX/g; s/\$MAX_DELTA/$MAX_DELTA/g" job-ablation.yaml > "$JOB_TEMP_FILE"
+
     # Create PVC
-    sed "s/\$USER/$USER/g; s/\$INDEX/$INDEX/g; s/\$STORAGE/$STORAGE/g" pvc-ablation.yml | kubectl create -f -
+    kubectl create -f "$PVC_TEMP_FILE"
 
     # Create Job
-    sed "s/\$USER/$USER/g; s/\$INFK8S_QUEUE_NAME/$INFK8S_QUEUE_NAME/g; s/\$INDEX/$INDEX/g; s/\$MAX_DELTA/$MAX_DELTA/g" job-ablation.yaml | kubectl create -f -
+    kubectl create -f "$JOB_TEMP_FILE"
+
+    # Clean up temporary files
+    rm -f "$PVC_TEMP_FILE" "$JOB_TEMP_FILE"
 done
