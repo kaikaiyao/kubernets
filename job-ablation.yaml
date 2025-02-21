@@ -47,7 +47,7 @@ spec:
                 --saving_path=results \
                 --convergence_threshold=0.0000001 \
                 --mask_switch=True \
-                --resume_checkpoint=/nfs/user/s2470447-infk8s/data/checkpoint_12345.pt \
+                --resume_checkpoint=/nfs/user/s2470447-infk8s/data/checkpoint_20250221204015484235.pt \
                 --n_iterations=600
               # Capture the exit status of the Python script
               exit_status=$?
