@@ -32,10 +32,11 @@ spec:
             - |
               echo "Running experiment with max_delta=$MAX_DELTA"
               mkdir -p /workspace/kubernets/results
+              cp /nfs-user/data/checkpoint_20250221204015484235.pt /workspace/kubernets/results/checkpoint_20250221204015484235.pt
               python3 -u main.py train \
                 --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
                 --batch_size=8 \
-                --n_iterations=200000 \
+                --n_iterations=600 \
                 --num_eval_samples=10000 \
                 --num_conv_layers=7 \
                 --num_pool_layers=7 \
@@ -45,7 +46,8 @@ spec:
                 --max_delta=$MAX_DELTA \
                 --saving_path=results \
                 --convergence_threshold=0.0000001 \
-                --mask_switch=True
+                --mask_switch=True \
+                --resume_checkpoint=/workspace/kubernets/results/checkpoint_20250221204015484235.pt
               exit_status=$?
               echo "Python script finished with exit status $exit_status, sleeping indefinitely"
               sleep infinity
