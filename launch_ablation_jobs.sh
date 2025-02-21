@@ -1,4 +1,5 @@
 #!/bin/bash
+set -xe
 
 USER="s2470447-infk8s"
 INFK8S_QUEUE_NAME="informatics-user-queue"
