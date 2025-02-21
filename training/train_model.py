@@ -110,7 +110,7 @@ def train_model(
         x_M_hat_constrained = constrain_image(x_M_hat, x_M, max_delta)
 
         if mask_switch:
-            if i == 0:
+            if i == 0 or start_iter != 0:
                 k_mask = generate_mask_secret_key(x_M_hat_constrained.shape, seed_key, device=device)
 
             x_M_original = x_M.clone().detach()
