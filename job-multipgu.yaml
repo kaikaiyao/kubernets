@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${USER}-job-multigpu-test
+  labels:
+    eidf/user: ${USER}
+    kueue.x-k8s.io/queue-name: ${INFK8S_QUEUE_NAME}
+    kueue.x-k8s.io/priority-class: batch-workload-priority
+spec:
+  completions: 1
+  parallelism: 1
+  completionMode: Indexed
+  backoffLimit: 2147483647
+  activeDeadlineSeconds: 86400
+  template:
+    metadata:
+      labels:
+        eidf/user: ${USER}
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      containers:
+        - name: multigpu-test
+          image: kaiyaoed/my_app:latest
+          workingDir: "/workspace/kubernets"
+          env:
+            - name: NCCL_ASYNC_ERROR_HANDLING
+              value: "1"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              echo "Starting multi-GPU test with $(nvidia-smi -L | wc -l) GPUs"
+              echo "Available GPUs:"
+              nvidia-smi -L
+              torchrun --nproc_per_node=auto --standalone multigpu_train.py
+              echo "Training finished"
+              sleep infinity
+          resources:
+            limits:
+              nvidia.com/gpu: "4"  # Number of MIG instances to use
+              cpu: "16"
+              memory: "64Gi"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace/kubernets/results
+            - name: nfs-user
+              mountPath: /nfs-user
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: ${USER}-ws-multigpu-test
+        - name: nfs-user
+          nfs:
+            server: $INFK8S_NFS_SERVER_IP
+            path: /user/$USER
