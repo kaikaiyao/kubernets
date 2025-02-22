@@ -21,36 +21,39 @@ spec:
     spec:
       restartPolicy: OnFailure
       nodeSelector:
-        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB-MIG-3g.20gb
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB-MIG-1g.5gb
       containers:
         - name: multigpu-test
           image: kaiyaoed/my_app:latest
           workingDir: "/workspace/kubernets"
           env:
-            - name: TORCH_NCCL_ASYNC_ERROR_HANDLING
-              value: "1"
-            - name: PYTHONUNBUFFERED
-              value: "1"
             - name: CUDA_VISIBLE_DEVICES
+              value: "0,1,2,3"  # Explicit device indices for MIG
+            - name: NVIDIA_VISIBLE_DEVICES
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.annotations['nvidia.com/gpu']
           command: ["/bin/bash", "-c"]
           args:
             - |
-              # Get actual number of allocated MIG instances
-              NUM_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr -cd ',' | wc -c)
-              NUM_GPUS=$((NUM_GPUS + 1))
-              
-              echo "=== MIG Device Check ==="
+              # Verify actual GPU visibility
+              echo "=== NVIDIA-SMI Output ==="
               nvidia-smi -L
-              echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
-              echo "Detected GPUs: $NUM_GPUS"
+              
+              # Get available device count
+              NUM_GPUS=$(python -c "import torch; print(torch.cuda.device_count())")
+              echo "PyTorch Detected GPUs: $NUM_GPUS"
+              
+              # Validate before training
+              if [ $NUM_GPUS -eq 0 ]; then
+                echo "CRITICAL ERROR: No GPUs detected by PyTorch"
+                exit 1
+              fi
               
               torchrun --nproc_per_node=$NUM_GPUS --standalone multigpu_train.py
           resources:
             limits:
-              nvidia.com/mig-3g.20gb: 4  # Request 4 MIG instances
+              nvidia.com/mig-1g.5gb: 4  # Must match your MIG request
               cpu: "16"
               memory: "64Gi"
           volumeMounts:

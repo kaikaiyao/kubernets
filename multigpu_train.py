@@ -24,31 +24,29 @@ def print_rank0(message):
         print(message)
 
 def main():
-    # Verify CUDA first
+    # 1. Initial CUDA check
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA unavailable - check MIG configuration")
+        raise RuntimeError("CUDA not available - check MIG configuration")
     
-    # Get actual device count from environment
-    visible_devices = os.environ.get('CUDA_VISIBLE_DEVICES', '')
-    num_gpus = len(visible_devices.split(',')) if visible_devices else 0
-    print(f"[Init] CUDA visible devices: {visible_devices} ({num_gpus} GPUs)")
-
-    # Initialize distributed backend
+    # 2. Get ACTUAL device count
+    num_gpus = torch.cuda.device_count()
+    print(f"[System] PyTorch detected {num_gpus} CUDA devices")
+    
+    # 3. Initialize distributed training AFTER verification
     dist.init_process_group(backend='nccl')
     local_rank = int(os.environ['LOCAL_RANK'])
-    world_size = int(os.environ['WORLD_SIZE'])
     
-    # Validate device index
+    # 4. Validate against ACTUAL devices
     if local_rank >= num_gpus:
-        raise ValueError(f"Local rank {local_rank} exceeds available {num_gpus} MIG devices")
+        raise ValueError(f"Rank {local_rank} requested but only {num_gpus} devices available")
     
-    # Set device carefully
+    # 5. Device setup with explicit validation
     try:
-        torch.cuda.set_device(local_rank)
         device = torch.device(f'cuda:{local_rank}')
-        print(f"[Rank {local_rank}] Successfully set device {local_rank}")
-    except Exception as e:
-        print(f"[Rank {local_rank}] Failed to set device: {str(e)}")
+        torch.cuda.set_device(device)
+        print(f"[Rank {local_rank}] Successfully connected to device {local_rank}")
+    except RuntimeError as e:
+        print(f"[Rank {local_rank}] Device initialization failed: {str(e)}")
         raise
 
     # Model setup
