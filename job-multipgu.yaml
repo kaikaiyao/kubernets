@@ -17,7 +17,7 @@ spec:
       labels:
         eidf/user: ${USER}
       annotations:
-        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB-MIG-3g.20gb
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB-MIG-1g.5gb
     spec:
       restartPolicy: OnFailure
       nodeSelector:
@@ -27,8 +27,6 @@ spec:
           image: kaiyaoed/my_app:latest
           workingDir: "/workspace/kubernets"
           env:
-            - name: CUDA_VISIBLE_DEVICES
-              value: "0,1,2,3"  # Explicit device indices for MIG
             - name: NVIDIA_VISIBLE_DEVICES
               valueFrom:
                 fieldRef:
@@ -50,10 +48,11 @@ spec:
                 exit 1
               fi
               
-              torchrun --nproc_per_node=$NUM_GPUS --standalone multigpu_train.py
+              # Launch with per-process CUDA_VISIBLE_DEVICES
+              torchrun --nproc_per_node=$NUM_GPUS --standalone bash -c 'export CUDA_VISIBLE_DEVICES=$LOCAL_RANK; python multigpu_train.py'
           resources:
             limits:
-              nvidia.com/mig-1g.5gb: 4  # Must match your MIG request
+              nvidia.com/mig-1g.5gb: 4
               cpu: "16"
               memory: "64Gi"
           volumeMounts:
