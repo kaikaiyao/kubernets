@@ -34,22 +34,11 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
-              # Verify actual GPU visibility
               echo "=== NVIDIA-SMI Output ==="
               nvidia-smi -L
               
-              # Get available device count
-              NUM_GPUS=$(python -c "import torch; print(torch.cuda.device_count())")
-              echo "PyTorch Detected GPUs: $NUM_GPUS"
-              
-              # Validate before training
-              if [ $NUM_GPUS -eq 0 ]; then
-                echo "CRITICAL ERROR: No GPUs detected by PyTorch"
-                exit 1
-              fi
-              
-              # Launch with per-process CUDA_VISIBLE_DEVICES
-              torchrun --nproc_per_node=$NUM_GPUS --standalone bash -c 'export CUDA_VISIBLE_DEVICES=$LOCAL_RANK; python multigpu_train.py'
+              echo "Starting multi-GPU training"
+              torchrun --nproc_per_node=4 --standalone /workspace/kubernets/multigpu_train.py
           resources:
             limits:
               nvidia.com/mig-1g.5gb: 4
