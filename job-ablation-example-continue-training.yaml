@@ -11,7 +11,7 @@ spec:
   parallelism: 1
   completionMode: Indexed
   backoffLimit: 2147483647
-  activeDeadlineSeconds: 86400
+  activeDeadlineSeconds: 864000
   template:
     metadata:
       labels:

@@ -11,7 +11,7 @@ spec:
   parallelism: 1
   completionMode: Indexed
   backoffLimit: 2147483647
-  activeDeadlineSeconds: 86400
+  activeDeadlineSeconds: 864000
   template:
     metadata:
       labels:
@@ -35,7 +35,7 @@ spec:
               python3 -u main.py train \
                 --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
                 --batch_size=8 \
-                --n_iterations=200000 \
+                --n_iterations=300000 \
                 --num_eval_samples=10000 \
                 --num_conv_layers=7 \
                 --num_pool_layers=7 \
