@@ -19,7 +19,7 @@ spec:
     spec:
       restartPolicy: OnFailure
       nodeSelector:
-        nvidia.com/gpu.present: "true"
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB  # Request full A100 GPUs
       containers:
         - name: multigpu-test
           image: kaiyaoed/my_app:latest
@@ -27,20 +27,26 @@ spec:
           env:
             - name: NCCL_ASYNC_ERROR_HANDLING
               value: "1"
+            - name: TORCH_NCCL_ASYNC_ERROR_HANDLING  # Use the updated NCCL error handling variable
+              value: "1"
             - name: PYTHONUNBUFFERED
               value: "1"
+            - name: CUDA_VISIBLE_DEVICES  # Ensure PyTorch only sees allocated GPUs
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['nvidia.com/gpu']
           command: ["/bin/bash", "-c"]
           args:
             - |
               echo "Starting multi-GPU test with $(nvidia-smi -L | wc -l) GPUs"
               echo "Available GPUs:"
               nvidia-smi -L
-              torchrun --nproc_per_node=auto --standalone multigpu_train.py
+              torchrun --nproc_per_node=$(nvidia-smi -L | wc -l) --standalone multigpu_train.py
               echo "Training finished"
               sleep infinity
           resources:
             limits:
-              nvidia.com/gpu: "4"  # Number of MIG instances to use
+              nvidia.com/gpu: "4"  # Number of GPUs to use (ensure this matches available GPUs)
               cpu: "16"
               memory: "64Gi"
           volumeMounts:
