@@ -16,10 +16,12 @@ spec:
     metadata:
       labels:
         eidf/user: ${USER}
+      annotations:
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB-MIG-3g.20gb
     spec:
       restartPolicy: OnFailure
       nodeSelector:
-        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB-MIG-1g.5gb  # Target MIG instances
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB-MIG-3g.20gb
       containers:
         - name: multigpu-test
           image: kaiyaoed/my_app:latest
@@ -29,23 +31,26 @@ spec:
               value: "1"
             - name: PYTHONUNBUFFERED
               value: "1"
-            - name: CUDA_VISIBLE_DEVICES  # Required for MIG visibility
+            - name: CUDA_VISIBLE_DEVICES
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.annotations['nvidia.com/gpu']
           command: ["/bin/bash", "-c"]
           args:
             - |
+              # Get actual number of allocated MIG instances
+              NUM_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr -cd ',' | wc -c)
+              NUM_GPUS=$((NUM_GPUS + 1))
+              
               echo "=== MIG Device Check ==="
               nvidia-smi -L
               echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
-              echo "PyTorch CUDA Available: $(python -c 'import torch; print(torch.cuda.is_available())'"
+              echo "Detected GPUs: $NUM_GPUS"
               
-              echo "Starting training..."
-              torchrun --nproc_per_node=$(echo $CUDA_VISIBLE_DEVICES | tr -cd , | wc -c) --standalone multigpu_train.py
+              torchrun --nproc_per_node=$NUM_GPUS --standalone multigpu_train.py
           resources:
             limits:
-              nvidia.com/mig-1g.5gb: "4"  # Request MIG instances instead of full GPUs
+              nvidia.com/mig-3g.20gb: 4  # Request 4 MIG instances
               cpu: "16"
               memory: "64Gi"
           volumeMounts:
