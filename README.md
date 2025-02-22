@@ -103,7 +103,7 @@ For parallel tasks like hyperparameter tuning, use Kubernetes **Jobs**.
 ### 5.1 Submit a Batch Job  
 Create an arrayed job (similar to Slurm jobs):  
 ```bash
-envsubst '$USER $INFK8S_QUEUE_NAME' < job-array.yaml | kubectl create -f -
+envsubst '$USER $INFK8S_QUEUE_NAME $INFK8S_NFS_SERVER_IP' < job-array.yaml | kubectl create -f -
 ```
 *Replace `job-array.yaml` with your Job template. Uses `$INFK8S_QUEUE_NAME` for resource allocation.*
 
