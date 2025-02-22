@@ -23,13 +23,17 @@ def print_rank0(message):
     if dist.get_rank() == 0:
         print(message)
 
-def main():
+    # Verify CUDA availability FIRST
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA not available! Check MIG configuration")
+    
     # Initialize distributed backend
     dist.init_process_group(backend='nccl')
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA not available! Check GPU allocation")
+    
     local_rank = int(os.environ['LOCAL_RANK'])
-    world_size = int(os.environ['WORLD_SIZE'])
+    print(f"Rank {local_rank}: CUDA device count = {torch.cuda.device_count()}")
+    
+    # Explicitly set device for MIG compatibility
     torch.cuda.set_device(local_rank)
     device = torch.device(f'cuda:{local_rank}')
     
