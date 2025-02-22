@@ -2,6 +2,8 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: ${USER}-job-multigpu-test
+  annotations:  # Add annotations for GPU specification
+    nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB
   labels:
     eidf/user: ${USER}
     kueue.x-k8s.io/queue-name: ${INFK8S_QUEUE_NAME}
@@ -19,34 +21,35 @@ spec:
     spec:
       restartPolicy: OnFailure
       nodeSelector:
-        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB  # Request full A100 GPUs
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB
+        nvidia.com/mig.config: all-disabled  # Enforce full GPU mode
       containers:
         - name: multigpu-test
           image: kaiyaoed/my_app:latest
           workingDir: "/workspace/kubernets"
           env:
-            - name: NCCL_ASYNC_ERROR_HANDLING
-              value: "1"
-            - name: TORCH_NCCL_ASYNC_ERROR_HANDLING  # Use the updated NCCL error handling variable
+            - name: TORCH_NCCL_ASYNC_ERROR_HANDLING
               value: "1"
             - name: PYTHONUNBUFFERED
               value: "1"
-            - name: CUDA_VISIBLE_DEVICES  # Ensure PyTorch only sees allocated GPUs
+            - name: NVIDIA_VISIBLE_DEVICES  # Use NVIDIA's device visibility
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.annotations['nvidia.com/gpu']
           command: ["/bin/bash", "-c"]
           args:
             - |
-              echo "Starting multi-GPU test with $(nvidia-smi -L | wc -l) GPUs"
-              echo "Available GPUs:"
+              echo "=== CUDA Device Check ==="
               nvidia-smi -L
+              echo "Visible CUDA devices: $CUDA_VISIBLE_DEVICES"
+              echo "PyTorch detected GPUs: $(python -c 'import torch; print(torch.cuda.device_count())')"
+              
+              echo "Starting training..."
               torchrun --nproc_per_node=$(nvidia-smi -L | wc -l) --standalone multigpu_train.py
               echo "Training finished"
-              sleep infinity
           resources:
             limits:
-              nvidia.com/gpu: "4"  # Number of GPUs to use (ensure this matches available GPUs)
+              nvidia.com/gpu: "4"  # Must match node capacity
               cpu: "16"
               memory: "64Gi"
           volumeMounts:

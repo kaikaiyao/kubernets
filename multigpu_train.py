@@ -24,11 +24,10 @@ def print_rank0(message):
         print(message)
 
 def main():
-    # Add this before initializing distributed backend
-    os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("NVIDIA_VISIBLE_DEVICES", "")
-
     # Initialize distributed backend
     dist.init_process_group(backend='nccl')
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA not available! Check GPU allocation")
     local_rank = int(os.environ['LOCAL_RANK'])
     world_size = int(os.environ['WORLD_SIZE'])
     torch.cuda.set_device(local_rank)
