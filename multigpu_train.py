@@ -23,6 +23,7 @@ def print_rank0(message):
     if dist.get_rank() == 0:
         print(message)
 
+def main():
     # Verify CUDA availability FIRST
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA not available! Check MIG configuration")
