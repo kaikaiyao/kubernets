@@ -37,7 +37,7 @@ spec:
               python3 -u main.py train \
                 --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
                 --batch_size=8 \
-                --n_iterations=300000 \
+                --n_iterations=500000 \
                 --num_eval_samples=10000 \
                 --num_conv_layers=7 \
                 --num_pool_layers=7 \
@@ -49,8 +49,7 @@ spec:
                 --convergence_threshold=0.0000001 \
                 --mask_switch=True
               exit_status=$?
-              echo "Python script finished with exit status $exit_status, sleeping indefinitely"
-              sleep infinity
+              echo "Python script finished with exit status $exit_status"
           resources:
             limits:
               nvidia.com/gpu: "1"  # Each job uses 1 GPU
