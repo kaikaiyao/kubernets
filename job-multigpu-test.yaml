@@ -1,9 +1,11 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: s2470447-infk8s-job-multigpu-test
+  name: ${USER}-job-ablation-${INDEX}
   labels:
-    eidf/user: s2470447
+    eidf/user: ${USER}
+    kueue.x-k8s.io/queue-name: ${INFK8S_QUEUE_NAME}
+    kueue.x-k8s.io/priority-class: batch-workload-priority
 spec:
   completions: 1
   parallelism: 1
