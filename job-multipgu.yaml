@@ -15,20 +15,15 @@ spec:
       labels:
         eidf/user: s2470447
       annotations:
-        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB-MIG-1g.5gb
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB  # Updated to whole GPU
     spec:
       restartPolicy: OnFailure
       nodeSelector:
-        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB-MIG-1g.5gb
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB  # Updated to whole GPU
       containers:
         - name: multigpu-test
-          image: kaiyaoed/my_app:latest  # Replace with your actual image
+          image: kaiyaoed/my_app:latest
           workingDir: "/workspace/kubernets"
-          env:
-            - name: NVIDIA_VISIBLE_DEVICES
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.annotations['nvidia.com/gpu']
           command: ["/bin/bash", "-c"]
           args:
             - |
@@ -43,11 +38,11 @@ spec:
               export NCCL_DEBUG=INFO
               export NCCL_P2P_DISABLE=1
               
-              # Launch torchrun with 4 processes
-              torchrun --nproc_per_node=4 --standalone /workspace/kubernets/multigpu_train.py
+              # Launch torchrun with 2 processes (1 per GPU)
+              torchrun --nproc_per_node=2 --standalone /workspace/kubernets/multigpu_train.py  # Updated to 2 GPUs
           resources:
             limits:
-              nvidia.com/mig-1g.5gb: 4  # Request 4 MIG devices
+              nvidia.com/gpu: 2  # Request 2 entire GPUs (not MIG)
               cpu: "16"
               memory: "64Gi"
           volumeMounts:
@@ -60,12 +55,12 @@ spec:
       volumes:
         - name: workspace
           persistentVolumeClaim:
-            claimName: s2470447-ws-multigpu-test  # Replace with your PVC
+            claimName: s2470447-ws-multigpu-test
         - name: nfs-user
           nfs:
-            server: $INFK8S_NFS_SERVER_IP  # Replace with your NFS server IP
-            path: /user/s2470447  # Replace with your NFS path
+            server: $INFK8S_NFS_SERVER_IP
+            path: /user/s2470447
         - name: shm
           emptyDir:
             medium: Memory
-            sizeLimit: 1Gi  # 1GB shared memory
+            sizeLimit: 1Gi
