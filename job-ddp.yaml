@@ -79,7 +79,7 @@ spec:
       volumes:
         - name: workspace
           persistentVolumeClaim:
-            claimName: ${USER}-ws-${INDEX}
+            claimName: ${USER}-ws-ddp
         - name: nfs-user
           nfs:
             server: $INFK8S_NFS_SERVER_IP
