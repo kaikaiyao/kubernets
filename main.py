@@ -102,6 +102,7 @@ def main():
             latent_dim = args.self_trained_latent_dim
             gan_model = load_gan_model(args.self_trained_model_path, latent_dim).to(device)
             watermarked_model = clone_model(gan_model).to(device)
+            watermarked_model.train()
             decoder = FlexibleDecoder(
                 1,
                 args.num_conv_layers,
