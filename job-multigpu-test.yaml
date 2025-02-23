@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: s2470447-infk8s-job-multigpu-test
+  name: ${USER}-job-multigpu-test
   labels:
     eidf/user: ${USER}
     kueue.x-k8s.io/queue-name: ${INFK8S_QUEUE_NAME}
@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       labels:
-        eidf/user: s2470447
+        eidf/user: ${USER}
       annotations:
         nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB  # Updated to whole GPU
     spec:
@@ -57,11 +57,11 @@ spec:
       volumes:
         - name: workspace
           persistentVolumeClaim:
-            claimName: s2470447-ws-multigpu-test
+            claimName: ${USER}-ws-multigpu-test
         - name: nfs-user
           nfs:
             server: $INFK8S_NFS_SERVER_IP
-            path: /user/s2470447
+            path: /user/$USER
         - name: shm
           emptyDir:
             medium: Memory
