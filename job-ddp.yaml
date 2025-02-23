@@ -50,16 +50,19 @@ spec:
                       --master_addr=127.0.0.1 \
                       --master_port=12345 \
                       main.py train \
-                      --stylegan2_url="..." \
-                      --batch_size=8 \
+                      --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
+                      --batch_size=4 \
                       --n_iterations=300000 \
+                      --num_eval_samples=10000 \
                       --num_conv_layers=7 \
                       --num_pool_layers=7 \
                       --initial_channels=64 \
                       --lr_M_hat=2e-4 \
                       --lr_D=2e-4 \
                       --max_delta=0.01 \
-                      --saving_path=results
+                      --saving_path=results \
+                      --convergence_threshold=0.0000001 \
+                      --mask_switch=True
               exit_status=$?
               echo "Python script finished with exit status $exit_status, sleeping indefinitely"
               sleep infinity
