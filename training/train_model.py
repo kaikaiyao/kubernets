@@ -2,7 +2,9 @@ import torch
 import os
 import gc
 import numpy as np
-import logging  # Added logging import
+import logging
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from utils.model_utils import save_finetuned_model
 from utils.loss_functions import get_key_loss
@@ -37,63 +39,39 @@ def train_model(
     mask_switch,
     seed_key,
     mask_threshold,
-    optimizer_M_hat,  # Added
-    optimizer_D,      # Added
-    start_iter=0,     # Added
-    initial_loss_history=None,  # Added
+    optimizer_M_hat,
+    optimizer_D,
+    start_iter=0,
+    initial_loss_history=None,
+    rank=0,
+    world_size=1,
 ):
-    # Enable performance optimizations
-    if device.type == "cuda":
-        torch.backends.cudnn.benchmark = True
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
-
-    # Generate time_string early for logging
     time_string = generate_time_based_string()
-    
-    # Ensure saving directory exists
     os.makedirs(saving_path, exist_ok=True)
-    
-    # Set up logging
     log_file = os.path.join(saving_path, f'training_log_{time_string}.txt')
-    setup_logging(log_file)  # Call the logging setup function
     
-    # Print max_delta (might need a better restructure of logging code altogether later)
-    logging.info(f"max_delta = {max_delta}")
-
-    # Log initial configuration
-    logging.info(f"time_string = {time_string}")
-    logging.info("The decoder structure is:\n%s", decoder)
-    logging.info(f"The decoder model's number of parameters is: {sum(p.numel() for p in decoder.parameters())}")
-    logging.info(f"The convergence threshold is: {convergence_threshold}")
-
-    # Check CUDA status before wrapping models
-    if device.type == "cuda":
-        # Verify device count matches expectations
-        available_devices = torch.cuda.device_count()
-        print(f"Training with {available_devices} GPUs")
-        
-        if available_devices > 1:
-            watermarked_model = torch.nn.DataParallel(watermarked_model)
-            decoder = torch.nn.DataParallel(decoder)
+    if rank == 0:
+        setup_logging(log_file)
+        logging.info(f"World size: {world_size}")
+        logging.info(f"max_delta = {max_delta}")
+        logging.info(f"time_string = {time_string}")
+        logging.info("Decoder structure:\n%s", decoder.module if isinstance(decoder, DDP) else decoder)
+        logging.info(f"Decoder parameters: {sum(p.numel() for p in decoder.parameters())}")
+        logging.info(f"Convergence threshold: {convergence_threshold}")
 
     gan_model.eval()
     watermarked_model.train()
     decoder.train()
 
-    for param in watermarked_model.parameters():
-        param.requires_grad = True
-
-    loss_key_history = []
-    converged = False
-
-    # Initialize loss history
     loss_key_history = initial_loss_history if initial_loss_history is not None else []
+    converged = False
 
     for i in range(start_iter, n_iterations):
         torch.cuda.empty_cache()
         gc.collect()
 
+        # Generate different noise on each device
+        torch.manual_seed(seed_key + i * world_size + rank)
         z = torch.randn((batch_size, latent_dim), device=device)
 
         with torch.no_grad():
@@ -119,7 +97,7 @@ def train_model(
             x_M = mask_image_with_key(x_M, k_mask)
             x_M_hat_constrained = mask_image_with_key(x_M_hat_constrained, k_mask)
 
-            if i == 0 or i == 99999:
+            if rank == 0 and (i == 0 or i == 99999):
                 os.makedirs(saving_path, exist_ok=True)
                 with PdfPages(os.path.join(saving_path, 'first_iteration_images.pdf')) as pdf:
                     fig, axes = plt.subplots(4, 8, figsize=(20, 12))
@@ -180,46 +158,49 @@ def train_model(
 
         loss_key_history.append(loss_key.item())
 
-        logging.info(
-            f"Train Iteration {i + 1}: "
-            f"loss_key: {loss_key.item():.4f}, "
-            f"d_k_M_hat.max(): {d_k_M_hat.max().item():.4f}, "
-            f"d_k_M.min(): {d_k_M.min().item():.4f}"
-        )
+        if rank == 0 and i % 100 == 0:
+            logging.info(
+                f"Train Iteration {i + 1}: "
+                f"loss_key: {loss_key.item():.4f}, "
+                f"d_k_M_hat.max(): {d_k_M_hat.max().item():.4f}, "
+                f"d_k_M.min(): {d_k_M.min().item():.4f}"
+            )
 
         del loss, loss_key, d_k_M_hat, d_k_M
         torch.cuda.empty_cache()
 
+        # Synchronize and check convergence
         if (i + 1) % 2000 == 0 and (i + 1) >= 4000:
             current_avg_loss_key = np.mean(loss_key_history[-2000:])
             previous_avg_loss_key = np.mean(loss_key_history[-4000:-2000])
             loss_key_diff = abs(current_avg_loss_key - previous_avg_loss_key)
             
-            logging.info(f"At iteration {i + 1}, loss_key difference between last two 2000-iteration blocks: {loss_key_diff:.4f}")
-            
-            if loss_key_diff < convergence_threshold:
-                converged = True
-                logging.info(f"Converged at iteration {i + 1}, loss_key difference: {loss_key_diff:.4f}")
+            if rank == 0:
+                logging.info(f"Iter {i + 1}, loss_key diff: {loss_key_diff:.4f}")
                 
-                if run_eval:
-                    watermarked_model.eval()
-                    decoder.eval()
+                if loss_key_diff < convergence_threshold:
+                    converged = True
+                    logging.info(f"Converged at iter {i + 1}")
                     
-                    with torch.no_grad():
-                        eval_results = evaluate_model(
-                            num_images,
-                            gan_model,
-                            watermarked_model,
-                            decoder,
-                            k_auth,
-                            device,
-                            plotting,
-                            latent_dim,
-                            max_delta,
-                            mask_switch,
-                            seed_key,
-                            mask_threshold,
-                        )
+                    if run_eval:
+                        watermarked_model.eval()
+                        decoder.eval()
+                        
+                        with torch.no_grad():
+                            eval_results = evaluate_model(
+                                num_images,
+                                gan_model,
+                                watermarked_model.module,
+                                decoder.module,
+                                k_auth,
+                                device,
+                                plotting,
+                                latent_dim,
+                                max_delta,
+                                mask_switch,
+                                seed_key,
+                                mask_threshold,
+                            )
                         auc, tpr_at_1_fpr, best_threshold, best_threshold_tpr, loss_lpips_mean, fid_score, mean_max_delta, total_decoder_params = eval_results
                     
                     logging.info(
@@ -234,6 +215,21 @@ def train_model(
                         f"total_decoder_params: {total_decoder_params}"
                     )
 
+                    # Save checkpoint
+                    checkpoint = {
+                        'watermarked_model': watermarked_model.module.state_dict(),
+                        'decoder': decoder.module.state_dict(),
+                        'optimizer_M_hat': optimizer_M_hat.state_dict(),
+                        'optimizer_D': optimizer_D.state_dict(),
+                        'iteration': i,
+                        'loss_key_history': loss_key_history,
+                    }
+                    checkpoint_path = os.path.join(saving_path, f'checkpoint_{time_string}.pt')
+                    torch.save(checkpoint, checkpoint_path)
+                    save_finetuned_model(watermarked_model.module, saving_path, f'watermarked_model_{time_string}.pkl')
+                    torch.save(decoder.module.state_dict(), os.path.join(saving_path, f'decoder_model_{time_string}.pth'))
+                    logging.info(f"Models saved after convergence at iteration {i + 1}, time_string = {time_string}")
+
                 break
 
     if not converged:
@@ -243,60 +239,63 @@ def train_model(
             previous_avg_loss_key = np.mean(loss_key_history[-4000:-2000])
             convergence_score = abs(current_avg_loss_key - previous_avg_loss_key)
         
-        logging.info(
-            f"Training completed. Convergence score: {convergence_score:.4f}" 
-            if convergence_score is not None 
-            else "Training completed. Convergence score: Not enough data to compute convergence score"
-        )
-        
-        if run_eval:
-            watermarked_model.eval()
-            decoder.eval()
-            
-            with torch.no_grad():
-                eval_results = evaluate_model(
-                    num_images,
-                    gan_model,
-                    watermarked_model,
-                    decoder,
-                    k_auth,
-                    device,
-                    plotting,
-                    latent_dim,
-                    max_delta,
-                    mask_switch,
-                    seed_key,
-                    mask_threshold,
-                )
-                auc, tpr_at_1_fpr, best_threshold, best_threshold_tpr, loss_lpips_mean, fid_score, mean_max_delta, total_decoder_params = eval_results
-            
+        if rank == 0:
             logging.info(
-                f"Eval after training completion at iteration {n_iterations}: "
-                f"AUC score: {f'{auc:.4f}' if auc is not None else 'None'}, "
-                f"tpr_at_1_fpr: {f'{tpr_at_1_fpr:.4f}' if tpr_at_1_fpr is not None else 'None'}, "
-                f"best_threshold: {f'{best_threshold:.4f}' if best_threshold is not None else 'None'}, "
-                f"best_threshold_tpr: {f'{best_threshold_tpr:.4f}' if best_threshold_tpr is not None else 'None'}, "
-                f"loss_lpips_mean: {loss_lpips_mean:.4f}, "
-                f"fid_score: {fid_score:.4f}, "
-                f"mean_max_delta: {mean_max_delta:.4f}, "
-                f"total_decoder_params: {total_decoder_params}"
+                f"Training completed. Convergence score: {convergence_score:.4f}" 
+                if convergence_score is not None 
+                else "Training completed. Convergence score: Not enough data to compute convergence score"
             )
+            
+            if run_eval:
+                watermarked_model.eval()
+                decoder.eval()
+                
+                with torch.no_grad():
+                    eval_results = evaluate_model(
+                        num_images,
+                        gan_model,
+                        watermarked_model.module,
+                        decoder.module,
+                        k_auth,
+                        device,
+                        plotting,
+                        latent_dim,
+                        max_delta,
+                        mask_switch,
+                        seed_key,
+                        mask_threshold,
+                    )
+                    auc, tpr_at_1_fpr, best_threshold, best_threshold_tpr, loss_lpips_mean, fid_score, mean_max_delta, total_decoder_params = eval_results
+                
+                logging.info(
+                    f"Eval after training completion at iteration {n_iterations}: "
+                    f"AUC score: {f'{auc:.4f}' if auc is not None else 'None'}, "
+                    f"tpr_at_1_fpr: {f'{tpr_at_1_fpr:.4f}' if tpr_at_1_fpr is not None else 'None'}, "
+                    f"best_threshold: {f'{best_threshold:.4f}' if best_threshold is not None else 'None'}, "
+                    f"best_threshold_tpr: {f'{best_threshold_tpr:.4f}' if best_threshold_tpr is not None else 'None'}, "
+                    f"loss_lpips_mean: {loss_lpips_mean:.4f}, "
+                    f"fid_score: {fid_score:.4f}, "
+                    f"mean_max_delta: {mean_max_delta:.4f}, "
+                    f"total_decoder_params: {total_decoder_params}"
+                )
 
-    # Save the underlying model if using DataParallel
-    watermarked_model_to_save = watermarked_model.module if isinstance(watermarked_model, torch.nn.DataParallel) else watermarked_model
+    # Save final models
+    if rank == 0:
+        checkpoint = {
+            'watermarked_model': watermarked_model.module.state_dict(),
+            'decoder': decoder.module.state_dict(),
+            'optimizer_M_hat': optimizer_M_hat.state_dict(),
+            'optimizer_D': optimizer_D.state_dict(),
+            'iteration': n_iterations - 1,
+            'loss_key_history': loss_key_history,
+        }
+        checkpoint_path = os.path.join(saving_path, f'checkpoint_final_{time_string}.pt')
+        torch.save(checkpoint, checkpoint_path)
 
-    checkpoint = {
-    'watermarked_model': watermarked_model_to_save.state_dict(),
-    'decoder': decoder.state_dict(),
-    'optimizer_M_hat': optimizer_M_hat.state_dict(),
-    'optimizer_D': optimizer_D.state_dict(),
-    'iteration': i,
-    'loss_key_history': loss_key_history,
-    }
+        save_finetuned_model(watermarked_model.module, saving_path, f'watermarked_model_final_{time_string}.pkl')
+        torch.save(decoder.module.state_dict(), os.path.join(saving_path, f'decoder_model_final_{time_string}.pth'))
+        logging.info(f"Final models saved at iteration {n_iterations}, time_string = {time_string}")
 
-    checkpoint_path = os.path.join(saving_path, f'checkpoint_{time_string}.pt')
-    torch.save(checkpoint, checkpoint_path)
-
-    save_finetuned_model(watermarked_model_to_save, saving_path, f'watermarked_model_{time_string}.pkl')
-    torch.save(decoder.state_dict(), os.path.join(saving_path, f'decoder_model_{time_string}.pth'))
-    logging.info(f"Models saved after convergence at iteration {i + 1}, time_string = {time_string}")
+    # Cleanup
+    if rank == 0:
+        logging.info("Training completed successfully.")

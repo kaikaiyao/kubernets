@@ -2,6 +2,7 @@ import argparse
 import os
 import subprocess
 import torch
+import torch.distributed as dist
 import pprint
 
 from models.stylegan2 import load_stylegan2_model
@@ -14,32 +15,23 @@ from training.train_model import train_model
 from evaluation.evaluate_model import evaluate_model
 from evaluation.attacks import black_box_attack_binary_based
 
-# Then modify the initialize_cuda function
 def initialize_cuda():
     try:
-        # Check for CUDA availability first
         if not torch.cuda.is_available():
             return torch.device("cpu")
-            
-        # Force CUDA initialization with dummy tensor
         _ = torch.empty(1).cuda()
-        
-        # Verify device count after initialization
         print(f"Discovered {torch.cuda.device_count()} GPUs")
         for i in range(torch.cuda.device_count()):
             print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-            
         return torch.device("cuda")
     except Exception as e:
         print(f"CUDA initialization failed: {str(e)}")
         return torch.device("cpu")
 
-
 def main():
     parser = argparse.ArgumentParser(description="Run training or evaluation for the model.")
-
     parser.add_argument("mode", choices=["train", "eval", "attack"], help="Mode to run the script in")
-
+    
     # Common arguments
     parser.add_argument("--seed_key", type=int, default=2024, help="Seed for the random authentication key")
     parser.add_argument("--stylegan2_url", type=str, default="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl", help="URL to load the StyleGAN2 model from")
@@ -66,7 +58,6 @@ def main():
     parser.add_argument("--convergence_threshold", type=float, default=0.005, help="Threshold between loss_key diff of each 2000 epochs to determine convergence.")
     parser.add_argument("--mask_switch", type=bool, default=False, help="To apply the new masking pipeline")
     parser.add_argument("--mask_threshold", type=float, default=0.2, help="Threshold for mask")
-    # Add in the training arguments section of main.py
     parser.add_argument("--resume_checkpoint", type=str, help="Path to a checkpoint file to resume training")
 
     # Evaluation arguments
@@ -82,43 +73,33 @@ def main():
     parser.add_argument("--image_attack_size", type=int, default=10000, help="size of attack image set")
     parser.add_argument("--best_threshold", type=float, default=1.0, help="best_threshold of the trained decoder (pipeline) as input for the bb attack")
 
+    # DDP arguments
+    parser.add_argument("--local_rank", type=int, default=0, help="Local rank for distributed training")
+
     args = parser.parse_args()
 
-    # Print all input parameters
-    print("===== Input Parameters =====")
-    pprint.pprint(vars(args))
-    print("============================\n")
-    
-    # Call the function to print GPU info
-    get_gpu_info()
+    # Distributed training setup
+    if args.mode == "train":
+        dist.init_process_group(backend='nccl', init_method='env://')
+        args.local_rank = int(os.environ['LOCAL_RANK'])
+        torch.cuda.set_device(args.local_rank)
+        device = torch.device('cuda', args.local_rank)
+        args.world_size = dist.get_world_size()
+        args.rank = dist.get_rank()
+    else:
+        device = initialize_cuda()
 
-    # Environment checks FIRST
-    print("===== Environment Check =====")
-    print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
-    
-    # Device initialization
-    device = initialize_cuda()
-    print(f"\nInitial device: {device}")
-    
-    # Early CUDA check
-    if device.type == "cuda":
-        try:
-            print(f"First GPU: {torch.cuda.get_device_name(0)}")
-        except RuntimeError as e:
-            print(f"GPU access failed: {str(e)}")
-            device = torch.device("cpu")
+    if args.rank == 0:
+        print("===== Input Parameters =====")
+        pprint.pprint(vars(args))
+        print("============================\n")
+        get_gpu_info()
 
     if args.mode == "train":
-
-        print(f"PyTorch version: {torch.__version__}")
-        print(f"PyTorch detected CUDA version: {torch.version.cuda}")
-
-        k_auth = torch.tensor([0], device=device)  # Create directly on device
-        print(f"k_auth = {k_auth}")
+        k_auth = torch.tensor([0], device=device)
 
         if args.self_trained:
             latent_dim = args.self_trained_latent_dim
-
             gan_model = load_gan_model(args.self_trained_model_path, latent_dim).to(device)
             watermarked_model = clone_model(gan_model).to(device)
             decoder = FlexibleDecoder(
@@ -127,58 +108,6 @@ def main():
                 args.num_pool_layers,
                 args.initial_channels,
             ).to(device)
-
-            
-            from torch import optim
-            optimizer_D = optim.Adagrad(decoder.parameters(), lr=args.lr_D)
-            optimizer_M_hat = optim.Adagrad(watermarked_model.parameters(), lr=args.lr_M_hat)
-
-            start_iter = 0
-            initial_loss_history = []
-
-            if args.resume_checkpoint:
-                checkpoint = torch.load(args.resume_checkpoint, map_location=device)
-                
-                # Load model states
-                watermarked_model.load_state_dict(checkpoint['watermarked_model'])
-                decoder.load_state_dict(checkpoint['decoder'])
-                
-                # Load optimizer states
-                optimizer_M_hat.load_state_dict(checkpoint['optimizer_M_hat'])
-                optimizer_D.load_state_dict(checkpoint['optimizer_D'])
-                
-                start_iter = checkpoint['iteration'] + 1
-                initial_loss_history = checkpoint['loss_key_history']
-                
-                print(f"Resuming training from iteration {start_iter}")
-
-            print(f"Original model's latent_dim: {latent_dim}")
-
-            train_model(
-                gan_model,
-                watermarked_model,
-                decoder,
-                k_auth,
-                args.n_iterations,
-                latent_dim,
-                args.batch_size,
-                device,
-                args.lr_M_hat,
-                args.lr_D,
-                args.run_eval,
-                args.num_eval_samples,
-                args.plotting,
-                args.max_delta,
-                args.saving_path,
-                args.convergence_threshold,
-                args.mask_switch,
-                args.seed_key,
-                args.mask_threshold,
-                optimizer_M_hat,  # Pass optimizers
-                optimizer_D,
-                start_iter,       # Pass start_iter
-                initial_loss_history,  # Pass loss history
-            )
         else:
             local_path = args.stylegan2_url.split('/')[-1]
             gan_model = load_stylegan2_model(url=args.stylegan2_url, local_path=local_path, device=device)
@@ -189,61 +118,69 @@ def main():
                 args.num_pool_layers,
                 args.initial_channels,
             ).to(device)
+            latent_dim = gan_model.z_dim
 
+        # Wrap models with DDP
+        watermarked_model = torch.nn.parallel.DistributedDataParallel(
+            watermarked_model,
+            device_ids=[args.local_rank],
+            output_device=args.local_rank
+        )
+        decoder = torch.nn.parallel.DistributedDataParallel(
+            decoder,
+            device_ids=[args.local_rank],
+            output_device=args.local_rank
+        )
 
-            from torch import optim
-            optimizer_D = optim.Adagrad(decoder.parameters(), lr=args.lr_D)
-            optimizer_M_hat = optim.Adagrad(watermarked_model.parameters(), lr=args.lr_M_hat)
+        # Optimizers
+        optimizer_D = torch.optim.Adagrad(decoder.parameters(), lr=args.lr_D)
+        optimizer_M_hat = torch.optim.Adagrad(watermarked_model.parameters(), lr=args.lr_M_hat)
 
-            start_iter = 0
-            initial_loss_history = []
-
-            if args.resume_checkpoint:
-                checkpoint = torch.load(args.resume_checkpoint, map_location=device)
-                
-                # Load model states
-                watermarked_model.load_state_dict(checkpoint['watermarked_model'])
-                decoder.load_state_dict(checkpoint['decoder'])
-                
-                # Load optimizer states
-                optimizer_M_hat.load_state_dict(checkpoint['optimizer_M_hat'])
-                optimizer_D.load_state_dict(checkpoint['optimizer_D'])
-                
-                start_iter = checkpoint['iteration'] + 1
-                initial_loss_history = checkpoint['loss_key_history']
-                
+        # Load checkpoint
+        start_iter = 0
+        initial_loss_history = []
+        if args.resume_checkpoint:
+            map_location = {'cuda:%d' % 0: 'cuda:%d' % args.local_rank}
+            checkpoint = torch.load(args.resume_checkpoint, map_location=map_location)
+            
+            watermarked_model.module.load_state_dict(checkpoint['watermarked_model'])
+            decoder.module.load_state_dict(checkpoint['decoder'])
+            optimizer_M_hat.load_state_dict(checkpoint['optimizer_M_hat'])
+            optimizer_D.load_state_dict(checkpoint['optimizer_D'])
+            
+            start_iter = checkpoint['iteration'] + 1
+            initial_loss_history = checkpoint['loss_key_history']
+            
+            if args.rank == 0:
                 print(f"Resuming training from iteration {start_iter}")
 
-
-            latent_dim = gan_model.z_dim
-            print(f"Original model's latent_dim: {latent_dim}")
-            print(f"Type of gan_model: {type(gan_model)}")
-
-            train_model(
-                gan_model,
-                watermarked_model,
-                decoder,
-                k_auth,
-                args.n_iterations,
-                latent_dim,
-                args.batch_size,
-                device,
-                args.lr_M_hat,
-                args.lr_D,
-                args.run_eval,
-                args.num_eval_samples,
-                args.plotting,
-                args.max_delta,
-                args.saving_path,
-                args.convergence_threshold,
-                args.mask_switch,
-                args.seed_key,
-                args.mask_threshold,
-                optimizer_M_hat,  # Pass optimizers
-                optimizer_D,
-                start_iter,       # Pass start_iter
-                initial_loss_history,  # Pass loss history
-            )
+        train_model(
+            gan_model,
+            watermarked_model,
+            decoder,
+            k_auth,
+            args.n_iterations,
+            latent_dim,
+            args.batch_size,
+            device,
+            args.lr_M_hat,
+            args.lr_D,
+            args.run_eval,
+            args.num_eval_samples,
+            args.plotting,
+            args.max_delta,
+            args.saving_path,
+            args.convergence_threshold,
+            args.mask_switch,
+            args.seed_key,
+            args.mask_threshold,
+            optimizer_M_hat,
+            optimizer_D,
+            start_iter,
+            initial_loss_history,
+            args.rank,
+            args.world_size,
+        )
 
     elif args.mode == "eval":
         local_path = args.stylegan2_url.split('/')[-1]
