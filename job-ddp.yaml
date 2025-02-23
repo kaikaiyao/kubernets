@@ -47,14 +47,14 @@ spec:
               # First try to download the model file explicitly
               curl -o ffhq70k-paper256-ada.pkl "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl"
               mkdir -p /workspace/kubernets/results
-              torchrun --nproc_per_node=8 \
+              torchrun --nproc_per_node=1 \
                       --nnodes=1 \
                       --node_rank=0 \
                       --master_addr=127.0.0.1 \
                       --master_port=12345 \
                       main.py train \
                       --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
-                      --batch_size=4 \
+                      --batch_size=8 \
                       --n_iterations=300000 \
                       --num_eval_samples=10000 \
                       --num_conv_layers=7 \
@@ -71,7 +71,7 @@ spec:
               sleep infinity
           resources:
             limits:
-              nvidia.com/gpu: "8"
+              nvidia.com/gpu: "1"
               cpu: "8"
               memory: "32Gi"
           volumeMounts:
