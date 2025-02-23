@@ -89,4 +89,6 @@ def train(rank, world_size):
 if __name__ == '__main__':
     world_size = torch.cuda.device_count()
     print(f'Found {world_size} GPUs')
-    mp.spawn(train, args=(world_size,), nprocs=world_size, join=True)
+    rank = int(os.environ["RANK"])
+    world_size = int(os.environ["WORLD_SIZE"])
+    train(rank, world_size)
