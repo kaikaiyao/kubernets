@@ -230,7 +230,7 @@ def train_model(
                     torch.save(decoder.module.state_dict(), os.path.join(saving_path, f'decoder_model_{time_string}.pth'))
                     logging.info(f"Models saved after convergence at iteration {i + 1}, time_string = {time_string}")
 
-                break
+                    break
 
     if not converged:
         convergence_score = None
