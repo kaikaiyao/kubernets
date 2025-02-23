@@ -113,6 +113,7 @@ def main():
             local_path = args.stylegan2_url.split('/')[-1]
             gan_model = load_stylegan2_model(url=args.stylegan2_url, local_path=local_path, device=device)
             watermarked_model = clone_model(gan_model).to(device)
+            watermarked_model.train()
             decoder = FlexibleDecoder(
                 1,
                 args.num_conv_layers,
