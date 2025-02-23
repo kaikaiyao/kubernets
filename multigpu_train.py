@@ -1,76 +1,92 @@
-import os
-
-# Set CUDA_VISIBLE_DEVICES based on LOCAL_RANK before importing torch
-local_rank = int(os.environ['LOCAL_RANK'])
-os.environ['CUDA_VISIBLE_DEVICES'] = str(local_rank)
-
-# Now import torch after setting the environment variable
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
-from torch.utils.data import DataLoader, DistributedSampler
-from torchvision import datasets, transforms
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader, Dataset
+from torch.utils.data.distributed import DistributedSampler
 
-class SimpleCNN(nn.Module):
+# Simple model
+class SimpleModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(1, 32, 3)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc = nn.Linear(32 * 13 * 13, 10)
+        self.net = nn.Sequential(
+            nn.Linear(20, 100),
+            nn.ReLU(),
+            nn.Linear(100, 10)
+        )
 
     def forward(self, x):
-        x = self.pool(torch.relu(self.conv1(x)))
-        x = x.view(-1, 32 * 13 * 13)
-        return self.fc(x)
+        return self.net(x)
 
-def main():
-    # Initialize distributed training
-    dist.init_process_group(backend='nccl')
-    local_rank = int(os.environ['LOCAL_RANK'])
+# Synthetic dataset
+class FakeDataset(Dataset):
+    def __len__(self):
+        return 1000
     
-    # Debug: Print visible devices
-    print(f"[Rank {local_rank}] torch.cuda.device_count(): {torch.cuda.device_count()}")
-    for i in range(torch.cuda.device_count()):
-        print(f"[Rank {local_rank}] Device {i}: {torch.cuda.get_device_name(i)}")
-    
-    # Set device (only one GPU should be visible, as cuda:0)
-    device = torch.device('cuda:0')
-    torch.cuda.set_device(device)
-    print(f"[Rank {local_rank}] Using device: {device}")
+    def __getitem__(self, idx):
+        return torch.randn(20), torch.randint(0, 10, (1,)).item()
 
-    # Model setup
-    model = SimpleCNN().to(device)
-    ddp_model = DDP(model, device_ids=[0])
+def setup(rank, world_size):
+    # Initialize process group
+    dist.init_process_group(
+        backend='nccl',
+        init_method='env://',
+        rank=rank,
+        world_size=world_size
+    )
 
-    # Data setup (MNIST as example)
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-    ])
-    dataset = datasets.MNIST('./data', train=True, download=(local_rank == 0), transform=transform)
-    sampler = DistributedSampler(dataset, num_replicas=dist.get_world_size(), rank=local_rank)
-    dataloader = DataLoader(dataset, batch_size=64, sampler=sampler)
-
-    # Training setup
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(ddp_model.parameters(), lr=0.01)
-
-    # Training loop
-    for epoch in range(5):
-        sampler.set_epoch(epoch)
-        for batch_idx, (data, target) in enumerate(dataloader):
-            data, target = data.to(device), target.to(device)
-            optimizer.zero_grad()
-            output = ddp_model(data)
-            loss = criterion(output, target)
-            loss.backward()
-            optimizer.step()
-            if batch_idx % 100 == 0 and local_rank == 0:
-                print(f"Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item()}")
-
+def cleanup():
     dist.destroy_process_group()
 
-if __name__ == "__main__":
-    main()
+def train(rank, world_size):
+    setup(rank, world_size)
+    
+    # Create model and move to GPU
+    model = SimpleModel().to(rank)
+    ddp_model = DDP(model, device_ids=[rank])
+    
+    # Create dataset and sampler
+    dataset = FakeDataset()
+    sampler = DistributedSampler(
+        dataset,
+        num_replicas=world_size,
+        rank=rank,
+        shuffle=True
+    )
+    
+    # Create dataloader
+    loader = DataLoader(
+        dataset,
+        batch_size=32,
+        sampler=sampler,
+        num_workers=4
+    )
+    
+    # Loss and optimizer
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(ddp_model.parameters(), lr=0.001)
+    
+    # Training loop
+    for epoch in range(3):  # Run 3 epochs for demo
+        sampler.set_epoch(epoch)
+        for inputs, labels in loader:
+            inputs = inputs.to(rank)
+            labels = labels.to(rank)
+            
+            optimizer.zero_grad()
+            outputs = ddp_model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+        
+        if rank == 0:
+            print(f'Epoch {epoch+1}, Loss: {loss.item():.4f}')
+
+    cleanup()
+
+if __name__ == '__main__':
+    world_size = torch.cuda.device_count()
+    print(f'Found {world_size} GPUs')
+    mp.spawn(train, args=(world_size,), nprocs=world_size, join=True)

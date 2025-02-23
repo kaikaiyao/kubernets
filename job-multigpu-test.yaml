@@ -17,11 +17,11 @@ spec:
       labels:
         eidf/user: ${USER}
       annotations:
-        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB  # Updated to whole GPU
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB
     spec:
       restartPolicy: OnFailure
       nodeSelector:
-        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB  # Updated to whole GPU
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB
       containers:
         - name: multigpu-test
           image: kaiyaoed/my_app:latest
@@ -29,31 +29,17 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
-              # Verify actual GPU visibility
-              echo "=== NVIDIA-SMI Output ==="
-              nvidia-smi -L
-              
-              # Clean up stale NCCL shared memory files
-              rm -f /dev/shm/nccl-*
-              
-              # Set NCCL environment variables
-              export NCCL_DEBUG=INFO
-              export NCCL_P2P_DISABLE=1
-              
-              # Launch torchrun with 2 processes (1 per GPU)
-              torchrun --nproc_per_node=2 --standalone /workspace/kubernets/multigpu_train.py  # Updated to 2 GPUs
+              torchrun --nproc_per_node=2 /workspace/kubernets/multigpu_train.py
           resources:
             limits:
-              nvidia.com/gpu: 2  # Request 2 entire GPUs (not MIG)
-              cpu: "16"
-              memory: "64Gi"
+              nvidia.com/gpu: 2
+              cpu: "8"
+              memory: "32Gi"
           volumeMounts:
             - name: workspace
               mountPath: /workspace/kubernets/results
             - name: nfs-user
               mountPath: /nfs-user
-            - name: shm
-              mountPath: /dev/shm
       volumes:
         - name: workspace
           persistentVolumeClaim:
@@ -62,7 +48,3 @@ spec:
           nfs:
             server: $INFK8S_NFS_SERVER_IP
             path: /user/$USER
-        - name: shm
-          emptyDir:
-            medium: Memory
-            sizeLimit: 1Gi
