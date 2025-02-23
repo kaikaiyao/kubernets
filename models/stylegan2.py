@@ -1,12 +1,12 @@
 import os
 import sys
 import torch
-import dnnlib
-import legacy
 from torch.distributed import is_initialized, get_rank
 from utils.file_utils import download_file
 
 sys.path.append("./stylegan2-ada-pytorch")
+import dnnlib
+import legacy
 
 def load_stylegan2_model(url, local_path, device):
     # Only download from rank 0 to avoid conflicts
