@@ -27,37 +27,44 @@ def parse_log_file(log_path):
                 losses.append(loss_val)
     return iterations, losses
 
-def sample_data(iterations, losses, interval):
+def average_data_by_block(iterations, losses, block_size=1000):
     """
-    Samples data at iterations: 1, 1+interval, 1+2*interval, … up to the maximum.
-    If the final iteration is exactly a multiple of the interval,
-    it is adjusted (e.g., 300000 becomes 300001) for normalization.
+    Averages loss values for each block of iterations.
+    For example, averages losses from iterations 1 to 1000, then 1001 to 2000, etc.
+    Returns:
+      - averaged_iters: the average iteration index for each block (used for x-axis)
+      - averaged_losses: the average loss for each block
+      - max_iter_adjusted: the maximum iteration (adjusted if it's an exact multiple of block_size)
     """
-    # Create a lookup for fast access (assuming one entry per iteration)
-    data_dict = dict(zip(iterations, losses))
-    sampled_iters = []
-    sampled_losses = []
+    block_losses = {}
+    block_iters = {}
+    for it, loss in zip(iterations, losses):
+        block = (it - 1) // block_size
+        if block not in block_losses:
+            block_losses[block] = []
+            block_iters[block] = []
+        block_losses[block].append(loss)
+        block_iters[block].append(it)
+        
+    averaged_iters = []
+    averaged_losses = []
+    for block in sorted(block_losses.keys()):
+        avg_loss = np.mean(block_losses[block])
+        avg_iter = np.mean(block_iters[block])
+        averaged_losses.append(avg_loss)
+        averaged_iters.append(avg_iter)
+        
     max_iter = iterations[-1] if iterations else 0
-    # Adjust the maximum iteration if it is exactly a multiple of the interval
-    max_iter_adjusted = max_iter + 1 if max_iter % interval == 0 else max_iter
-
-    # Sample at every interval starting from iteration 1
-    for it in range(1, max_iter + 1, interval):
-        if it in data_dict:
-            sampled_iters.append(it)
-            sampled_losses.append(data_dict[it])
-        # If a particular iteration is missing, one could interpolate;
-        # here we simply skip it.
-    return sampled_iters, sampled_losses, max_iter_adjusted
+    # Adjust maximum iteration if it is exactly a multiple of the block_size
+    max_iter_adjusted = max_iter + 1 if max_iter % block_size == 0 else max_iter
+    return averaged_iters, averaged_losses, max_iter_adjusted
 
 def extract_delta(folder_name):
     """
     Extracts the delta value from a folder name.
     For example, "delta_0_01" is interpreted as 0.01, while "delta_2" is 2.
     """
-    # Remove the 'delta_' prefix
     delta_str = folder_name[len("delta_"):]
-    # Replace underscores with decimal points if needed (e.g., "0_01" -> "0.01")
     if "_" in delta_str:
         delta_str = delta_str.replace("_", ".")
     try:
@@ -72,7 +79,7 @@ def plot_loss_curves(main_folder):
         if os.path.isdir(os.path.join(main_folder, d)) and d.startswith("delta_")
     ]
 
-    data_list = []  # Will store tuples of (delta, normalized x, loss values)
+    data_list = []  # Will store tuples of (delta, normalized x, average loss values)
     for subfolder in subfolders:
         folder_name = os.path.basename(subfolder)
         delta_val = extract_delta(folder_name)
@@ -87,10 +94,10 @@ def plot_loss_curves(main_folder):
         if not iterations:
             print(f"[Warning] No valid data found in {log_file}. Skipping.")
             continue
-        sample_iters, sample_losses, max_iter_adj = sample_data(iterations, losses, interval=1000)
-        # Normalize iterations to [0, 1] for plotting
-        x_norm = [(it - 1) / (max_iter_adj - 1) for it in sample_iters]
-        data_list.append((delta_val, x_norm, sample_losses))
+        avg_iters, avg_losses, max_iter_adj = average_data_by_block(iterations, losses, block_size=1000)
+        # Normalize the averaged iteration values to [0, 1]
+        x_norm = [(it - 1) / (max_iter_adj - 1) for it in avg_iters]
+        data_list.append((delta_val, x_norm, avg_losses))
 
     # Sort the data by delta value (small to high)
     data_list.sort(key=lambda x: x[0] if x[0] is not None else float('inf'))
@@ -106,16 +113,16 @@ def plot_loss_curves(main_folder):
     else:
         norm = None
 
-    # Plot each delta curve with a color based on its delta value
+    # Plot each delta curve with a color based on its delta value, using a thinner line (linewidth=0.8)
     for delta, x, y in data_list:
         color = colormap(norm(delta)) if (delta is not None and norm is not None) else None
         label = f"$\\delta={delta}$" if delta is not None else "Unknown"
-        ax.plot(x, y, label=label, linewidth=0.5)
+        ax.plot(x, y, label=label, linewidth=0.8)
 
     # Set axis labels and title
     ax.set_xlabel("Normalized Training Progress", fontsize=14)
     ax.set_ylabel("Loss", fontsize=14)
-    ax.set_title("Training Loss Over Iterations", fontsize=16)
+    ax.set_title("Training Loss Over Iterations (Averaged per 1000 Iterations)", fontsize=16)
     # Only set start and end ticks for the x-axis
     ax.set_xticks([0, 1])
     ax.legend(title="Delta values", fontsize=12, title_fontsize=12)
@@ -128,7 +135,7 @@ def plot_loss_curves(main_folder):
     print(f"Plot saved to {output_file}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Plot training loss curves from log files in delta subfolders.")
+    parser = argparse.ArgumentParser(description="Plot training loss curves from log files in delta subfolders (averaged per 1000 iterations).")
     parser.add_argument("folder", type=str, help="Path to the main folder containing delta subfolders")
     args = parser.parse_args()
     plot_loss_curves(args.folder)
