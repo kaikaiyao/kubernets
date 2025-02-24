@@ -7,7 +7,8 @@ import logging  # Added to use logging.info
 
 from models.stylegan2 import load_stylegan2_model
 from models.gan import load_gan_model
-from models.decoders.decoder import FlexibleDecoder
+from models.decoder import FlexibleDecoder
+from models.attack_combined_model import CombinedModel
 from models.model_utils import clone_model, load_finetuned_model
 from utils.gpu import get_gpu_info, initialize_cuda
 from utils.file_utils import generate_time_based_string
@@ -251,7 +252,6 @@ def main():
                 args.initial_channels_surr,
             ).to(device)
         elif args.attack_type in ["combined"]:
-            from models.decoders.attack_combined_model import CombinedModel
             surrogate_decoder = CombinedModel(
                 input_channels=3, 
                 decoder_total_conv_layers=args.num_conv_layers_surr,

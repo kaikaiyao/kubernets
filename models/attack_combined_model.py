@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from models.decoders.decoder import FlexibleDecoder
+from models.decoder import FlexibleDecoder
 
 
 class TrainableCNN(nn.Module):
