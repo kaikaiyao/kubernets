@@ -319,8 +319,8 @@ def attack_label_based(
     train_size: int,
     image_attack_size: int,
     batch_size: int = 16,
-    epochs: int = 5,
-    attack_batch_size: int = 16,
+    epochs: int = 1,
+    attack_batch_size: int = 10,
     num_steps: int = 50,
     alpha_values: list = None,
 ) -> tuple:
