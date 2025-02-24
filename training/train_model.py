@@ -97,39 +97,39 @@ def train_model(
             x_M = mask_image_with_key(x_M, k_mask)
             x_M_hat_constrained = mask_image_with_key(x_M_hat_constrained, k_mask)
 
-            # if rank == 0 and (i == 0 or i == 99999):
-            #     os.makedirs(saving_path, exist_ok=True)
-            #     with PdfPages(os.path.join(saving_path, 'first_iteration_images.pdf')) as pdf:
-            #         fig, axes = plt.subplots(4, 8, figsize=(20, 12))
-            #         fig.suptitle("First Iteration Images", fontsize=16)
+            if plotting and rank == 0 and (i == 0 or i == 99999):
+                os.makedirs(saving_path, exist_ok=True)
+                with PdfPages(os.path.join(saving_path, 'first_iteration_images.pdf')) as pdf:
+                    fig, axes = plt.subplots(4, 8, figsize=(20, 12))
+                    fig.suptitle("First Iteration Images", fontsize=16)
 
-            #         for idx in range(8):
-            #             def normalize_image(img):
-            #                 img = img.cpu().detach().numpy()
-            #                 img_min = img.min()
-            #                 img_max = img.max()
-            #                 img = (img - img_min) / (img_max - img_min) * 255.0
-            #                 return img.astype('uint8')
+                    for idx in range(8):
+                        def normalize_image(img):
+                            img = img.cpu().detach().numpy()
+                            img_min = img.min()
+                            img_max = img.max()
+                            img = (img - img_min) / (img_max - img_min) * 255.0
+                            return img.astype('uint8')
 
-            #             axes[0, idx].imshow(normalize_image(x_M_original[idx].permute(1, 2, 0)))
-            #             axes[0, idx].set_title(f"Original x_M {idx+1}")
-            #             axes[0, idx].axis('off')
+                        axes[0, idx].imshow(normalize_image(x_M_original[idx].permute(1, 2, 0)))
+                        axes[0, idx].set_title(f"Original x_M {idx+1}")
+                        axes[0, idx].axis('off')
 
-            #             axes[1, idx].imshow(normalize_image(x_M[idx].permute(1, 2, 0)))
-            #             axes[1, idx].set_title(f"Modified x_M {idx+1}")
-            #             axes[1, idx].axis('off')
+                        axes[1, idx].imshow(normalize_image(x_M[idx].permute(1, 2, 0)))
+                        axes[1, idx].set_title(f"Modified x_M {idx+1}")
+                        axes[1, idx].axis('off')
 
-            #             axes[2, idx].imshow(normalize_image(x_M_hat_constrained_original[idx].permute(1, 2, 0)))
-            #             axes[2, idx].set_title(f"Original x_M_hat {idx+1}")
-            #             axes[2, idx].axis('off')
+                        axes[2, idx].imshow(normalize_image(x_M_hat_constrained_original[idx].permute(1, 2, 0)))
+                        axes[2, idx].set_title(f"Original x_M_hat {idx+1}")
+                        axes[2, idx].axis('off')
 
-            #             axes[3, idx].imshow(normalize_image(x_M_hat_constrained[idx].permute(1, 2, 0)))
-            #             axes[3, idx].set_title(f"Modified x_M_hat {idx+1}")
-            #             axes[3, idx].axis('off')
+                        axes[3, idx].imshow(normalize_image(x_M_hat_constrained[idx].permute(1, 2, 0)))
+                        axes[3, idx].set_title(f"Modified x_M_hat {idx+1}")
+                        axes[3, idx].axis('off')
 
-            #         plt.tight_layout()
-            #         pdf.savefig(fig)
-            #         plt.close(fig)
+                    plt.tight_layout()
+                    pdf.savefig(fig)
+                    plt.close(fig)
 
         x_M = x_M.detach()
 
