@@ -37,7 +37,7 @@ def train_surrogate_decoder(
         batch_size (int, optional): Batch size for training. Defaults to 4.
     """
     time_string = generate_time_based_string()
-    print(f"time_string = {time_string}")
+    logging.info(f"time_string = {time_string}")
 
     # Move models to device and set to appropriate modes
     surrogate_decoder.train()
@@ -193,7 +193,7 @@ def generate_attack_images(
 
     with torch.no_grad():
         for batch_idx in range(num_batches):
-            print(f"generate_attack_images func: batch_idx={batch_idx}")
+            logging.info(f"Generating attack images, batch index = {batch_idx}")
             current_batch_size = min(batch_size, image_attack_size - batch_idx * batch_size)
             if is_stylegan2(gan_model):
                 z = torch.randn((current_batch_size, latent_dim), device=device)
@@ -304,8 +304,7 @@ def perform_pgd_attack(
             torch.cuda.empty_cache()
             gc.collect()
 
-        np.set_printoptions(threshold=np.inf)
-        print(f"k_attack_scores_alpha: {k_attack_scores_alpha}")
+        logging.info(f"k_attack_scores_alpha: {k_attack_scores_alpha}")
 
         mean_score = np.mean(k_attack_scores_alpha)
         std_score = np.std(k_attack_scores_alpha)
