@@ -5,14 +5,12 @@ import math
 import torch
 import torch.nn as nn
 import numpy as np
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
+
 from torch.utils.data import Dataset, DataLoader
 from models.stylegan2 import is_stylegan2
 from utils.image_utils import constrain_image
 from utils.file_utils import generate_time_based_string
-from utils.key import generate_mask_secret_key, mask_image_with_key
+from key.key import generate_mask_secret_key, mask_image_with_key
 
 class GANGeneratedDataset(Dataset):
     """
@@ -334,13 +332,11 @@ def black_box_attack_binary_based(
     device: torch.device,
     train_size: int,
     image_attack_size: int,
-    best_threshold: float,
     batch_size: int = 16,
     epochs: int = 5,
     attack_batch_size: int = 16,
     num_steps: int = 50,
     alpha_values: list = None,
-    output_dir: str = '.',
 ) -> tuple:
     """
     Performs a black-box attack on a watermarked GAN model using a surrogate decoder.

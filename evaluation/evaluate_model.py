@@ -3,13 +3,13 @@ import numpy as np
 import statistics
 import math
 import matplotlib.pyplot as plt
-from utils.loss_functions import get_mse_loss, get_lpips_loss
-from utils.image_utils import enhance_contrast, constrain_image
+from training.loss_functions import get_lpips_loss
+from utils.image_utils import constrain_image
 from sklearn.metrics import roc_auc_score, roc_curve
 from torchvision.transforms.functional import to_pil_image
 from models.stylegan2 import is_stylegan2
 from torchmetrics.image.fid import FrechetInceptionDistance
-from utils.key import generate_mask_secret_key, mask_image_with_key
+from key.key import generate_mask_secret_key, mask_image_with_key
 
 def evaluate_model(
     num_images, 
@@ -23,7 +23,6 @@ def evaluate_model(
     max_delta,
     mask_switch,
     seed_key,
-    mask_threshold,
     batch_size=8
 ):
     # Set models to evaluation mode
@@ -33,7 +32,6 @@ def evaluate_model(
     total_decoder_params = sum(p.numel() for p in decoder.parameters())
 
     # Initialize loss functions
-    mse_loss = get_mse_loss()
     lpips_loss = get_lpips_loss(device)
 
     # Lists to store per-image values
@@ -177,7 +175,6 @@ def evaluate_model(
     # Compute ROC AUC and ROC curve metrics
     auc = roc_auc_score(labels, scores)
     fpr, tpr, thresholds = roc_curve(labels, scores)
-    tnr = 1 - fpr
 
     # Print detailed ROC metrics
     np.set_printoptions(threshold=np.inf)
@@ -200,14 +197,10 @@ def evaluate_model(
 
     # Calculate precision and recall (for reference)
     epsilon = 1e-8
-    precision = tpr / (tpr + fpr + epsilon)
-    recall = tpr
 
     # Compute TPR@1% FPR
     desired_fpr = 0.01  # 1%
     tpr_at_1_fpr = np.interp(desired_fpr, fpr, tpr)
-    best_threshold = np.interp(desired_fpr, fpr, thresholds)
-    best_threshold_tpr = tpr_at_1_fpr
 
     # Compute TPR and FPR across a custom set of thresholds
     thresholds_custom = np.arange(0, 1.001, 0.001)
@@ -235,7 +228,6 @@ def evaluate_model(
     plt.figure(figsize=(10, 6))
     plt.plot(thresholds_custom, tpr_custom, label="True Positive Rate (TPR)", color='blue', lw=2)
     plt.plot(thresholds_custom, fpr_custom, label="False Positive Rate (FPR)", color='red', lw=2)
-    plt.axvline(x=best_threshold, color='green', linestyle='--', label=f"Best Threshold = {best_threshold:.3f}")
     plt.xlabel("Threshold", fontsize=14)
     plt.ylabel("Rate", fontsize=14)
     plt.title("Threshold vs TPR vs FPR", fontsize=16)
@@ -248,8 +240,6 @@ def evaluate_model(
     return (
         auc,
         tpr_at_1_fpr,
-        best_threshold,
-        best_threshold_tpr,
         loss_lpips_mean,
         fid_score,
         mean_max_delta,

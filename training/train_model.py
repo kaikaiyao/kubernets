@@ -3,23 +3,21 @@ import os
 import gc
 import numpy as np
 import logging
-import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from utils.model_utils import save_finetuned_model
-from utils.loss_functions import get_key_loss
+from models.model_utils import save_finetuned_model
+from training.loss_functions import get_key_loss
 from evaluation.evaluate_model import evaluate_model
-from utils.file_utils import generate_time_based_string
 from models.stylegan2 import is_stylegan2
 from utils.image_utils import constrain_image
-from utils.key import generate_mask_secret_key, mask_image_with_key
-from utils.logging import setup_logging
+from key.key import generate_mask_secret_key, mask_image_with_key
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
 
 def train_model(
+    time_string,
     gan_model,
     watermarked_model,
     decoder,
@@ -28,8 +26,6 @@ def train_model(
     latent_dim,
     batch_size,
     device,
-    lr_M_hat,
-    lr_D,
     run_eval,
     num_images,
     plotting,
@@ -38,7 +34,6 @@ def train_model(
     convergence_threshold,
     mask_switch,
     seed_key,
-    mask_threshold,
     optimizer_M_hat,
     optimizer_D,
     start_iter=0,
@@ -46,12 +41,7 @@ def train_model(
     rank=0,
     world_size=1,
 ):
-    time_string = generate_time_based_string()
-    os.makedirs(saving_path, exist_ok=True)
-    log_file = os.path.join(saving_path, f'training_log_{time_string}.txt')
-    
     if rank == 0:
-        setup_logging(log_file)
         logging.info(f"World size: {world_size}")
         logging.info(f"max_delta = {max_delta}")
         logging.info(f"time_string = {time_string}")
@@ -199,17 +189,14 @@ def train_model(
                                 max_delta,
                                 mask_switch,
                                 seed_key,
-                                mask_threshold,
                             )
-                        auc, tpr_at_1_fpr, best_threshold, best_threshold_tpr, loss_lpips_mean, fid_score, mean_max_delta, total_decoder_params = eval_results
+                        auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
                     
                     logging.info(
                         f"Eval after convergence at iteration {i + 1}: "
                         f"AUC score: {auc:.4f if auc is not None else 'None'}, "
                         f"tpr_at_1_fpr: {tpr_at_1_fpr:.4f if tpr_at_1_fpr is not None else 'None'}, "
-                        f"best_threshold: {best_threshold:.4f if best_threshold is not None else 'None'}, "
-                        f"best_threshold_tpr: {best_threshold_tpr:.4f if best_threshold_tpr is not None else 'None'}, "
-                        f"loss_lpips_mean: {loss_lpips_mean:.4f}, "
+                        f"lpips_loss: {lpips_loss:.4f}, "
                         f"fid_score: {fid_score:.4f}, "
                         f"mean_max_delta: {mean_max_delta:.4f}, "
                         f"total_decoder_params: {total_decoder_params}"
@@ -263,17 +250,14 @@ def train_model(
                         max_delta,
                         mask_switch,
                         seed_key,
-                        mask_threshold,
                     )
-                    auc, tpr_at_1_fpr, best_threshold, best_threshold_tpr, loss_lpips_mean, fid_score, mean_max_delta, total_decoder_params = eval_results
+                    auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
                 
                 logging.info(
                     f"Eval after training completion at iteration {n_iterations}: "
                     f"AUC score: {f'{auc:.4f}' if auc is not None else 'None'}, "
                     f"tpr_at_1_fpr: {f'{tpr_at_1_fpr:.4f}' if tpr_at_1_fpr is not None else 'None'}, "
-                    f"best_threshold: {f'{best_threshold:.4f}' if best_threshold is not None else 'None'}, "
-                    f"best_threshold_tpr: {f'{best_threshold_tpr:.4f}' if best_threshold_tpr is not None else 'None'}, "
-                    f"loss_lpips_mean: {loss_lpips_mean:.4f}, "
+                    f"lpips_loss: {lpips_loss:.4f}, "
                     f"fid_score: {fid_score:.4f}, "
                     f"mean_max_delta: {mean_max_delta:.4f}, "
                     f"total_decoder_params: {total_decoder_params}"

@@ -1,15 +1,17 @@
-import argparse
+import argparse 
 import os
-import subprocess
 import torch
 import torch.distributed as dist
 import pprint
+import logging  # Added to use logging.info
 
 from models.stylegan2 import load_stylegan2_model
 from models.gan import load_gan_model
 from models.decoders.decoder import FlexibleDecoder
-from utils.model_utils import clone_model, load_finetuned_model
+from models.model_utils import clone_model, load_finetuned_model
 from utils.gpu import get_gpu_info, initialize_cuda
+from utils.file_utils import generate_time_based_string
+from utils.logging import setup_logging
 
 from training.train_model import train_model
 from evaluation.evaluate_model import evaluate_model
@@ -44,7 +46,6 @@ def main():
     parser.add_argument("--run_eval", type=bool, default=True, help="Run evaluation function during training")
     parser.add_argument("--convergence_threshold", type=float, default=0.005, help="Threshold between loss_key diff of each 2000 epochs to determine convergence.")
     parser.add_argument("--mask_switch", type=bool, default=False, help="To apply the new masking pipeline")
-    parser.add_argument("--mask_threshold", type=float, default=0.2, help="Threshold for mask")
     parser.add_argument("--resume_checkpoint", type=str, help="Path to a checkpoint file to resume training")
 
     # Evaluation arguments
@@ -74,11 +75,20 @@ def main():
         args.rank = dist.get_rank()
     else:
         device = initialize_cuda()
+        # If not running in distributed mode, set rank to 0 for logging purposes.
+        args.rank = 0
+
+    time_string = generate_time_based_string()
+
+    os.makedirs(args.saving_path, exist_ok=True)
 
     if args.rank == 0:
-        print("===== Input Parameters =====")
-        pprint.pprint(vars(args))
-        print("============================\n")
+        log_file = os.path.join(args.saving_path, f'training_log_{time_string}.txt')
+        setup_logging(log_file)
+
+        logging.info("===== Input Parameters =====")
+        logging.info(pprint.pformat(vars(args)))
+        logging.info("============================\n")
         get_gpu_info()
 
     if args.mode == "train":
@@ -140,9 +150,10 @@ def main():
             initial_loss_history = checkpoint['loss_key_history']
             
             if args.rank == 0:
-                print(f"Resuming training from iteration {start_iter}")
+                logging.info(f"Resuming training from iteration {start_iter}")
 
         train_model(
+            time_string,
             gan_model,
             watermarked_model,
             decoder,
@@ -151,8 +162,6 @@ def main():
             latent_dim,
             args.batch_size,
             device,
-            args.lr_M_hat,
-            args.lr_D,
             args.run_eval,
             args.num_eval_samples,
             args.plotting,
@@ -161,7 +170,6 @@ def main():
             args.convergence_threshold,
             args.mask_switch,
             args.seed_key,
-            args.mask_threshold,
             optimizer_M_hat,
             optimizer_D,
             start_iter,
@@ -196,10 +204,10 @@ def main():
         decoder = decoder.to(device)
 
         k_auth = torch.tensor([0], device=device)
-        print(f"k_auth = {k_auth}")
+        logging.info(f"k_auth = {k_auth}")
+        logging.info(f"Plotting: {args.plotting}")
         
-        print(args.plotting)
-        auc, tpr_at_1_fpr, best_threshold, best_threshold_tpr, loss_lpips_mean, fid_score, mean_max_delta, total_decoder_params = evaluate_model(
+        eval_results = evaluate_model(
             args.num_eval_samples,
             gan_model,
             watermarked_model,
@@ -211,17 +219,16 @@ def main():
             args.max_delta,
             args.mask_switch,
             args.seed_key,
-            args.mask_threshold,
         )
 
-        print(f"AUC score: {auc:.4f}, "
-              f"tpr_at_1_fpr: {tpr_at_1_fpr:.4f}, "
-              f"best_threshold: {best_threshold:.4f}, "
-              f"best_threshold_tpr: {best_threshold_tpr:.4f}, "
-              f"loss_lpips_mean: {loss_lpips_mean:.4f}, "
-              f"fid_score: {fid_score:.4f}, "
-              f"mean_max_delta: {mean_max_delta:.4f}, "
-              f"total_decoder_params: {total_decoder_params:.4f}, ")
+        auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
+
+        logging.info(f"AUC score: {auc:.4f}, "
+                     f"tpr_at_1_fpr: {tpr_at_1_fpr:.4f}, "
+                     f"lpips_loss: {lpips_loss:.4f}, "
+                     f"fid_score: {fid_score:.4f}, "
+                     f"mean_max_delta: {mean_max_delta:.4f}, "
+                     f"total_decoder_params: {total_decoder_params:.4f}")
 
     elif args.mode == "attack":
         local_path = args.stylegan2_url.split('/')[-1]
@@ -248,7 +255,7 @@ def main():
         decoder = decoder.to(device)
 
         if args.attack_method in ["base", "fixed"]:
-            surrogate_decoder =  FlexibleDecoder(
+            surrogate_decoder = FlexibleDecoder(
                 1,
                 args.num_conv_layers,
                 args.num_pool_layers,
@@ -265,7 +272,7 @@ def main():
             )
 
         k_auth = torch.tensor([0], device=device)
-        print(f"k_auth = {k_auth}")
+        logging.info(f"k_auth = {k_auth}")
 
         black_box_attack_binary_based(
             gan_model, 
