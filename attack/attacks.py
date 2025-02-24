@@ -276,9 +276,9 @@ def perform_pgd_attack(
                 torch.cuda.empty_cache()
                 gc.collect()
 
-            # Temporary masking (consider removing if not needed)
-            k_mask = generate_mask_secret_key(image_attack_batch.shape, 2024, device=device)
-            image_attack_batch = mask_image_with_key(image_attack_batch, k_mask)
+            # # Masking (only needed for the attack type 4)
+            # k_mask = generate_mask_secret_key(image_attack_batch.shape, 2024, device=device)
+            # image_attack_batch = mask_image_with_key(image_attack_batch, k_mask)
 
             with torch.no_grad():
                 k_attack_batch = decoder(image_attack_batch)
