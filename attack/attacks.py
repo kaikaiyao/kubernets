@@ -85,6 +85,13 @@ def train_surrogate_decoder(
                 # Constrain the watermarked images
                 x_M_hat = constrain_image(x_M_hat, x_M, max_delta)
 
+
+            # Apply mask before training decoder (only for attack type 4!)
+            k_mask = generate_mask_secret_key(x_M_hat.shape, 2024, device=device)
+            x_M = mask_image_with_key(x_M, k_mask)
+            x_M_hat = mask_image_with_key(x_M_hat, k_mask)
+
+
             # Create labels: 0 for x_M (original), 1 for x_M_hat (watermarked)
             labels = torch.cat([
                 torch.zeros(current_batch_size // 2, 1, device=device),
@@ -275,10 +282,6 @@ def perform_pgd_attack(
 
                 torch.cuda.empty_cache()
                 gc.collect()
-
-            # # Masking (only needed for the attack type 4)
-            # k_mask = generate_mask_secret_key(image_attack_batch.shape, 2024, device=device)
-            # image_attack_batch = mask_image_with_key(image_attack_batch, k_mask)
 
             with torch.no_grad():
                 k_attack_batch = decoder(image_attack_batch)
