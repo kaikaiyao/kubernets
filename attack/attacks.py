@@ -323,8 +323,8 @@ def attack_label_based(
     image_attack_size: int,
     batch_size: int = 16,
     epochs: int = 1,
-    attack_batch_size: int = 10,
-    num_steps: int = 50,
+    attack_batch_size: int = 16,
+    num_steps: int = 100,
     alpha_values: list = None,
 ) -> tuple:
     """
@@ -352,7 +352,7 @@ def attack_label_based(
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if alpha_values is None:
-        alpha_values = [1.0]
+        alpha_values = [0.1, 0.5, 1.0, 5.0]
 
     logging.info("Starting attack_label_based function.")
 
