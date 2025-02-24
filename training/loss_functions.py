@@ -6,7 +6,3 @@ def get_lpips_loss(device):
 
 def get_mse_loss():
     return nn.MSELoss()
-
-def get_key_loss(d_k_M_hat, d_k_M):
-    loss = ((d_k_M_hat - d_k_M).max() + 1) ** 2
-    return loss

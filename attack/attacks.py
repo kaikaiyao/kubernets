@@ -18,7 +18,7 @@ def train_surrogate_decoder(
     latent_dim: int,
     device: torch.device,
     train_size: int,
-    epochs: int = 5,
+    epochs: int = 5, # epoch is meaningless here, consider removing
     batch_size: int = 16,
 ) -> None:
     """
@@ -217,7 +217,6 @@ def perform_pgd_attack(
     surrogate_decoder: nn.Module,
     decoder: nn.Module,
     image_attack: torch.Tensor,
-    k_auth: torch.Tensor,
     max_delta: float,
     device: torch.device,
     num_steps: int,
@@ -231,7 +230,6 @@ def perform_pgd_attack(
         surrogate_decoder (nn.Module): Trained surrogate decoder.
         decoder (nn.Module): Real decoder for scoring.
         image_attack (torch.Tensor): Images to attack.
-        k_auth (torch.Tensor): Authentication key.
         max_delta (float): Maximum perturbation.
         device (torch.device): Device for computations.
         num_steps (int): Number of PGD steps.
@@ -283,12 +281,19 @@ def perform_pgd_attack(
                 torch.cuda.empty_cache()
                 gc.collect()
 
+            # Important Note: 
+            # Here, the decoder is still based on the original key=[0] 
+            # so, after the attack is finished, you get image_attack_batch, 
+            # decoder[image_attack_batch] is still supposed to output 0 (if attack's successful), because the original key(2024) is [0]
+            # despite the fact the surrogate decoder trains attacked image to 1 
+            # (surrogate decoder's labeling as you can see in above function, labels the watermarked image (attack image goal) to 1) 
+            # so, k_attack_batch -> 0 if attack is good, thus k_attack_score_batch -> 1 if attack is good, so the score is 1 if attack is good
+            # so after the k_auth refactor of the code base, this still makes sense.
             with torch.no_grad():
                 k_attack_batch = decoder(image_attack_batch)
 
-            norm_factor = torch.sqrt(torch.tensor(len(k_auth), dtype=torch.float32))
             k_attack_score_batch = (
-                1 - torch.norm(k_auth.unsqueeze(0) - k_attack_batch, dim=1) / norm_factor
+                1 - torch.norm(k_attack_batch, dim=1)
             ).cpu().numpy()
             k_attack_scores_alpha.extend(k_attack_score_batch)
             logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
@@ -316,7 +321,6 @@ def attack_label_based(
     max_delta: float,
     decoder: nn.Module,
     surrogate_decoder: nn.Module,
-    k_auth: torch.Tensor,
     latent_dim: int,
     device: torch.device,
     train_size: int,
@@ -336,7 +340,6 @@ def attack_label_based(
         max_delta (float): Maximum perturbation.
         decoder (nn.Module): Decoder for scoring.
         surrogate_decoder (nn.Module): Surrogate decoder to train.
-        k_auth (torch.Tensor): Authentication key.
         latent_dim (int): Latent space dimension.
         device (torch.device): Device for computations.
         train_size (int): Training samples per class.
@@ -385,7 +388,7 @@ def attack_label_based(
 
     # Perform PGD attack
     k_attack_scores_mean, k_attack_scores_std = perform_pgd_attack(
-        surrogate_decoder, decoder, image_attack, k_auth,
+        surrogate_decoder, decoder, image_attack, 
         max_delta, device, num_steps, alpha_values, attack_batch_size
     )
     logging.info("PGD attack for different alpha values completed.")

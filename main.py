@@ -92,15 +92,12 @@ def main():
         get_gpu_info()
 
     if args.mode == "train":
-        k_auth = torch.tensor([0], device=device)
-
         if args.self_trained:
             latent_dim = args.self_trained_latent_dim
             gan_model = load_gan_model(args.self_trained_model_path, latent_dim).to(device)
             watermarked_model = clone_model(gan_model).to(device)
             watermarked_model.train()
             decoder = FlexibleDecoder(
-                1,
                 args.num_conv_layers,
                 args.num_pool_layers,
                 args.initial_channels,
@@ -111,7 +108,6 @@ def main():
             watermarked_model = clone_model(gan_model).to(device)
             watermarked_model.train()
             decoder = FlexibleDecoder(
-                1,
                 args.num_conv_layers,
                 args.num_pool_layers,
                 args.initial_channels,
@@ -157,7 +153,6 @@ def main():
             gan_model,
             watermarked_model,
             decoder,
-            k_auth,
             args.n_iterations,
             latent_dim,
             args.batch_size,
@@ -195,7 +190,6 @@ def main():
         watermarked_model.eval()
 
         decoder = FlexibleDecoder(
-            1,
             args.num_conv_layers,
             args.num_pool_layers,
             args.initial_channels,
@@ -203,8 +197,6 @@ def main():
         decoder.load_state_dict(torch.load(args.decoder_model_path))
         decoder = decoder.to(device)
 
-        k_auth = torch.tensor([0], device=device)
-        logging.info(f"k_auth = {k_auth}")
         logging.info(f"Plotting: {args.plotting}")
         
         eval_results = evaluate_model(
@@ -212,7 +204,6 @@ def main():
             gan_model,
             watermarked_model,
             decoder,
-            k_auth,
             device,
             args.plotting,
             latent_dim,
@@ -246,7 +237,6 @@ def main():
         watermarked_model.eval()
 
         decoder = FlexibleDecoder(
-            1,
             args.num_conv_layers,
             args.num_pool_layers,
             args.initial_channels,
@@ -256,7 +246,6 @@ def main():
 
         if args.attack_method in ["base", "fixed"]:
             surrogate_decoder = FlexibleDecoder(
-                1,
                 args.num_conv_layers_surr,
                 args.num_pool_layers_surr,
                 args.initial_channels_surr,
@@ -265,14 +254,10 @@ def main():
             from models.decoders.attack_decoder import CombinedModel
             surrogate_decoder = CombinedModel(
                 input_channels=3, 
-                length_k_auth=1, 
                 decoder_total_conv_layers=args.num_conv_layers_surr,
                 decoder_total_pool_layers=args.num_pool_layers_surr,
                 decoder_initial_channels=args.initial_channels_surr,
             )
-
-        k_auth = torch.tensor([0], device=device)
-        logging.info(f"k_auth = {k_auth}")
 
         attack_label_based(
             gan_model, 
@@ -280,7 +265,6 @@ def main():
             args.max_delta,
             decoder, # this is for verification (it is the "real" pretrained decoder, used to verify if fake images' conf score)
             surrogate_decoder,
-            k_auth, 
             latent_dim, 
             device, 
             args.train_size, # training size for training surrogate decoder, usually being large to enable improve attach perf (?)

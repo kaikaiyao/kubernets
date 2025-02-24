@@ -16,7 +16,6 @@ def evaluate_model(
     gan_model, 
     watermarked_model, 
     decoder, 
-    k_auth, 
     device,
     plotting,
     latent_dim,
@@ -97,10 +96,9 @@ def evaluate_model(
         k_M_hat = decoder(x_M_hat_mask)
 
         # Compute similarity scores based on watermark representations
-        norm_factor = torch.sqrt(torch.tensor(len(k_auth), dtype=torch.float32)).item()
         # Compute distances for each image in the batch
-        k_M_scores = 1 - (torch.norm(k_auth.unsqueeze(0) - k_M, dim=1) / norm_factor)
-        k_M_hat_scores = 1 - (torch.norm(k_auth.unsqueeze(0) - k_M_hat, dim=1) / norm_factor)
+        k_M_scores = 1 - (torch.norm(k_M, dim=1))
+        k_M_hat_scores = 1 - (torch.norm(k_M_hat, dim=1))
         for j in range(current_batch_size):
             scores.append(k_M_scores[j].item())
             labels.append(0)  # Label for non-watermarked image

@@ -4,7 +4,6 @@ import math
 class FlexibleDecoder(nn.Module):
     def __init__(
         self,
-        length_k_auth,
         total_conv_layers=5,
         total_pool_layers=2,
         initial_channels=64,
@@ -12,7 +11,6 @@ class FlexibleDecoder(nn.Module):
         channel_growth='double'
     ):
         super(FlexibleDecoder, self).__init__()
-        self.length_k_auth = length_k_auth
         self.total_conv_layers = total_conv_layers
         self.total_pool_layers = total_pool_layers
         self.initial_channels = initial_channels
@@ -28,7 +26,7 @@ class FlexibleDecoder(nn.Module):
         self.features = self._make_layers(convs_per_block)
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(self.final_num_channels, length_k_auth),
+            nn.Linear(self.final_num_channels, 1),
             nn.Sigmoid(),
         )
 

@@ -212,7 +212,6 @@ def perform_pgd_attack(
     surrogate_decoder: nn.Module,
     decoder: nn.Module,
     image_attack: torch.Tensor,
-    k_auth: torch.Tensor,
     max_delta: float,
     device: torch.device,
     num_steps: int,
@@ -293,13 +292,11 @@ def perform_pgd_attack(
             with torch.no_grad():
                 k_attack_batch = decoder(image_attack_batch)
 
-            norm_factor = torch.sqrt(torch.tensor(len(k_auth), dtype=torch.float32))
             k_attack_score_batch = (
                 1
                 - torch.norm(
-                    k_auth.unsqueeze(0) - k_attack_batch, dim=1
+                    k_attack_batch, dim=1
                 )
-                / norm_factor
             ).cpu().numpy()
             k_attack_scores_alpha.extend(k_attack_score_batch)
             logging.info(
@@ -331,7 +328,6 @@ def attack_label_based(
     max_delta: float,
     decoder: nn.Module,
     surrogate_decoder: nn.Module,
-    k_auth: torch.Tensor,
     latent_dim: int,
     device: torch.device,
     train_size: int,
@@ -380,7 +376,7 @@ def attack_label_based(
 
     # Perform PGD Attack
     k_attack_scores_mean, k_attack_scores_std = perform_pgd_attack(
-        surrogate_decoder, decoder, image_attack, k_auth, 
+        surrogate_decoder, decoder, image_attack, 
         max_delta, device, num_steps, alpha_values, attack_batch_size
     )
     logging.info("PGD attack for different alpha values completed.")

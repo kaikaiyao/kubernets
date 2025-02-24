@@ -6,7 +6,6 @@ import logging
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from models.model_utils import save_finetuned_model
-from training.loss_functions import get_key_loss
 from evaluation.evaluate_model import evaluate_model
 from models.stylegan2 import is_stylegan2
 from utils.image_utils import constrain_image
@@ -21,7 +20,6 @@ def train_model(
     gan_model,
     watermarked_model,
     decoder,
-    k_auth,
     n_iterations,
     latent_dim,
     batch_size,
@@ -129,13 +127,13 @@ def train_model(
         del x_M, x_M_hat, x_M_hat_constrained
         torch.cuda.empty_cache()
 
-        d_k_M_hat = torch.norm(k_auth.unsqueeze(0).expand(batch_size, -1) - k_M_hat, dim=1) / torch.sqrt(torch.tensor(len(k_auth), dtype=torch.float32, device=device))
-        d_k_M = torch.norm(k_auth.unsqueeze(0).expand(batch_size, -1) - k_M, dim=1) / torch.sqrt(torch.tensor(len(k_auth), dtype=torch.float32, device=device))
+        d_k_M_hat = torch.norm(k_M_hat, dim=1) 
+        d_k_M = torch.norm(k_M, dim=1) 
 
         del k_M, k_M_hat
         torch.cuda.empty_cache()
 
-        loss_key = get_key_loss(d_k_M_hat, d_k_M)
+        loss = ((d_k_M_hat - d_k_M).max() + 1) ** 2 # this loss will train d_k_M_hat to 0 and d_k_M to 1, which means k_M_hat to 0 and k_M to 1, labeling watermarked model as 0 (D's output is scaler, so not really "label" but put the output as close to 0).
 
         optimizer_M_hat.zero_grad(set_to_none=True)
         optimizer_D.zero_grad(set_to_none=True)
@@ -182,7 +180,6 @@ def train_model(
                                 gan_model,
                                 watermarked_model.module,
                                 decoder.module,
-                                k_auth,
                                 device,
                                 plotting,
                                 latent_dim,
@@ -243,7 +240,6 @@ def train_model(
                         gan_model,
                         watermarked_model.module,
                         decoder.module,
-                        k_auth,
                         device,
                         plotting,
                         latent_dim,

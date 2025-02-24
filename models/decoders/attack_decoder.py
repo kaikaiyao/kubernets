@@ -43,7 +43,6 @@ class TrainableCNN(nn.Module):
 class FlexibleDecoder(nn.Module):
     def __init__(
         self,
-        length_k_auth,
         total_conv_layers=5,
         total_pool_layers=2,
         initial_channels=64,
@@ -51,7 +50,6 @@ class FlexibleDecoder(nn.Module):
         channel_growth='double'
     ):
         super(FlexibleDecoder, self).__init__()
-        self.length_k_auth = length_k_auth
         self.total_conv_layers = total_conv_layers
         self.total_pool_layers = total_pool_layers
         self.initial_channels = initial_channels
@@ -67,7 +65,7 @@ class FlexibleDecoder(nn.Module):
         self.features = self._make_layers(convs_per_block)
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(self.final_num_channels, length_k_auth),
+            nn.Linear(self.final_num_channels, 1),
             nn.Sigmoid(),
         )
 
@@ -130,7 +128,7 @@ class FlexibleDecoder(nn.Module):
 # Define the CombinedModel that attacker trains
 ###########################################################
 class CombinedModel(nn.Module):
-    def __init__(self, input_channels=3, length_k_auth=128, 
+    def __init__(self, input_channels=3,
                  decoder_total_conv_layers=5, decoder_total_pool_layers=2, 
                  decoder_initial_channels=64):
         """
@@ -138,7 +136,6 @@ class CombinedModel(nn.Module):
         
         Args:
             input_channels (int): Number of input channels for the CNN (e.g. 3 for RGB).
-            length_k_auth (int): The output dimension of the decoder.
             decoder_total_conv_layers (int): Total conv layers in the decoder.
             decoder_total_pool_layers (int): Total pool layers in the decoder.
             decoder_initial_channels (int): Initial channels for the decoder.
@@ -155,7 +152,6 @@ class CombinedModel(nn.Module):
         # (Already done above: output_channels=input_channels=3)
 
         self.decoder = FlexibleDecoder(
-            length_k_auth=length_k_auth,
             total_conv_layers=decoder_total_conv_layers,
             total_pool_layers=decoder_total_pool_layers,
             initial_channels=decoder_initial_channels

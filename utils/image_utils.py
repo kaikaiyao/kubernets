@@ -40,7 +40,7 @@ def enhance_contrast(image, factor=1):
     return enhanced
 
 
-def plot_variables(z, x_M, x_M_hat, k_M, k_M_hat, k_auth):
+def plot_variables(z, x_M, x_M_hat, k_M, k_M_hat):
     x_M_diff = x_M[0].squeeze() - x_M_hat[0].squeeze()
     tensors = {
         "z": z[0].squeeze(),
@@ -49,7 +49,6 @@ def plot_variables(z, x_M, x_M_hat, k_M, k_M_hat, k_auth):
         "x_M_diff": x_M_diff,
         "k_M": k_M[0].squeeze(),
         "k_M_hat": k_M_hat[0].squeeze(),
-        "k_auth": k_auth,
     }
     for title, tensor in tensors.items():
         if tensor.dim() == 2:
