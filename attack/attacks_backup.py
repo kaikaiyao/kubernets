@@ -5,124 +5,127 @@ import math
 import torch
 import torch.nn as nn
 import numpy as np
+
+from torch.utils.data import Dataset, DataLoader
 from models.stylegan2 import is_stylegan2
 from utils.image_utils import constrain_image
 from utils.file_utils import generate_time_based_string
 from key.key import generate_mask_secret_key, mask_image_with_key
 
+class GANGeneratedDataset(Dataset):
+    """
+    Custom Dataset for generating images and labels on-the-fly for training the surrogate decoder.
+    """
+    def __init__(
+        self,
+        gan_model: nn.Module,
+        watermarked_model: nn.Module,
+        max_delta: float,
+        latent_dim: int,
+        device: torch.device,
+        train_size: int,
+    ):
+        # Keep models on the device (GPU)
+        self.gan_model = gan_model.to(device)
+        self.watermarked_model = watermarked_model.to(device)
+        self.max_delta = max_delta
+        self.latent_dim = latent_dim
+        self.device = device
+        self.train_size = train_size
+        self.is_stylegan2 = is_stylegan2(gan_model)
+
+    def __len__(self):
+        return self.train_size * 2  # Since we have x_M and x_M_hat
+
+    def __getitem__(self, idx):
+        with torch.no_grad():
+            # Generate latent vector on the device
+            z = torch.randn(1, self.latent_dim, device=self.device)
+            if not self.is_stylegan2:
+                z = z.view(1, self.latent_dim, 1, 1)
+
+            # Generate images on the device
+            if self.is_stylegan2:
+                print("Using stylegan2")
+                x_M = self.gan_model(z, None, truncation_psi=1.0, noise_mode="const")
+                x_M_hat = self.watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
+            else:
+                print("Not using stylegan2")
+                x_M = self.gan_model(z)
+                x_M_hat = self.watermarked_model(z)
+
+            # Constrain the watermarked image
+            x_M_hat = constrain_image(x_M_hat, x_M, self.max_delta)
+
+            # # Put mask on before passing to decoder
+            # # Noted: This is used for key sensitivity study - i.e. when you change one bit of the key, how does attack perform etc
+            # k_mask = generate_mask_secret_key(x_M_hat.shape, 2025, device='cuda')
+            # x_M = mask_image_with_key(x_M, k_mask, 0.2)
+            # x_M_hat = mask_image_with_key(x_M_hat, k_mask, 0.2)
+
+            # Move to CPU and detach
+            x_M = x_M.squeeze(0).cpu()
+            x_M_hat = x_M_hat.squeeze(0).cpu()
+
+            # Alternate between x_M and x_M_hat
+            if idx % 2 == 0:
+                return x_M, torch.tensor([0], dtype=torch.float32)
+            else:
+                return x_M_hat, torch.tensor([1], dtype=torch.float32)
+
 def train_surrogate_decoder(
     surrogate_decoder: nn.Module,
-    gan_model: nn.Module,
-    watermarked_model: nn.Module,
-    max_delta: float,
-    latent_dim: int,
+    dataset: Dataset,
     device: torch.device,
-    train_size: int,
     epochs: int = 5,
-    batch_size: int = 4,
+    batch_size: int = 8,
 ) -> None:
     """
-    Train the surrogate decoder by generating batches on-the-fly on the GPU.
-
-    Args:
-        surrogate_decoder (nn.Module): The surrogate decoder model to train.
-        gan_model (nn.Module): The original GAN model for generating images.
-        watermarked_model (nn.Module): The watermarked GAN model.
-        max_delta (float): Maximum perturbation allowed for watermarked images.
-        latent_dim (int): Dimension of the latent space.
-        device (torch.device): Device to perform computations on (e.g., 'cuda').
-        train_size (int): Number of training samples (per class).
-        epochs (int, optional): Number of training epochs. Defaults to 5.
-        batch_size (int, optional): Batch size for training. Defaults to 4.
+    Train the surrogate decoder.
     """
+
     time_string = generate_time_based_string()
     print(f"time_string = {time_string}")
 
-    # Move models to device and set to appropriate modes
+    dataloader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=True,
+    )
+
     surrogate_decoder.train()
     surrogate_decoder.to(device)
-    gan_model.eval()
-    gan_model.to(device)
-    watermarked_model.eval()
-    watermarked_model.to(device)
 
-    # Define loss function and optimizer
     criterion = nn.BCELoss()
     optimizer = torch.optim.Adam(
         surrogate_decoder.parameters(), lr=0.0001, betas=(0.5, 0.999)
     )
-
-    # Check if GAN model is StyleGAN2
-    is_stylegan2_model = is_stylegan2(gan_model)
-
-    # Calculate number of batches (ceiling division)
-    num_batches = (train_size * 2 + batch_size - 1) // batch_size
 
     for epoch in range(epochs):
         epoch_loss = 0.0
         epoch_correct = 0
         epoch_total = 0
 
-        for batch_idx in range(num_batches):
-            # Determine current batch size (handles last batch)
-            current_batch_size = min(batch_size, train_size * 2 - batch_idx * batch_size)
+        for batch_idx, (batch_images, batch_labels) in enumerate(dataloader):
+            # Move data to the appropriate device
+            batch_images = batch_images.to(device)
+            batch_labels = batch_labels.to(device)
 
-            # Disable gradients for GAN models during batch generation
-            with torch.no_grad():
-                # Generate latent vectors on the device
-                z = torch.randn(current_batch_size, latent_dim, device=device)
-                if not is_stylegan2_model:
-                    z = z.view(current_batch_size, latent_dim, 1, 1)
-
-                # Generate images using GAN models
-                if is_stylegan2_model:
-                    x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
-                    x_M_hat = watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
-                else:
-                    x_M = gan_model(z)
-                    x_M_hat = watermarked_model(z)
-
-                # Constrain the watermarked images
-                x_M_hat = constrain_image(x_M_hat, x_M, max_delta)
-
-            # Create labels: 0 for x_M (original), 1 for x_M_hat (watermarked)
-            labels = torch.cat([
-                torch.zeros(current_batch_size // 2, 1, device=device),
-                torch.ones(current_batch_size // 2, 1, device=device)
-            ])
-            if current_batch_size % 2 != 0:
-                labels = torch.cat([labels, torch.zeros(1, 1, device=device)])
-
-            # Combine original and watermarked images
-            images = torch.cat([
-                x_M[:current_batch_size // 2],
-                x_M_hat[current_batch_size // 2:]
-            ], dim=0)
-            if current_batch_size % 2 != 0:
-                images = torch.cat([
-                    images,
-                    x_M[current_batch_size // 2:current_batch_size // 2 + 1]
-                ], dim=0)
-
-            # Shuffle images and labels
-            perm = torch.randperm(current_batch_size, device=device)
-            images = images[perm]
-            labels = labels[perm]
-
-            # Train on the batch
             optimizer.zero_grad()
-            outputs = surrogate_decoder(images)
-            loss = criterion(outputs, labels)
+            outputs = surrogate_decoder(batch_images)
+            loss = criterion(outputs, batch_labels)
             loss.backward()
             optimizer.step()
 
             epoch_loss += loss.item()
 
-            # Calculate accuracy
+            # Calculate accuracy for the current batch
             with torch.no_grad():
                 predicted = (outputs > 0.5).float()
-                correct = (predicted == labels).sum().item()
-                total = labels.numel()
+                correct = (predicted == batch_labels).sum().item()
+                total = batch_labels.numel()
                 batch_accuracy = correct / total
 
             epoch_correct += correct
@@ -130,29 +133,31 @@ def train_surrogate_decoder(
 
             logging.info(
                 f"Epoch {epoch + 1}/{epochs}, "
-                f"Batch {batch_idx + 1}/{num_batches}, "
+                f"Batch {batch_idx + 1}/{len(dataloader)}, "
                 f"Loss: {loss.item():.4f}, "
                 f"Accuracy: {batch_accuracy:.4f}"
             )
 
-            # Free up GPU memory
-            del z, x_M, x_M_hat, images, labels, outputs, loss, predicted
+            # Free up GPU memory after each batch
+            del batch_images, batch_labels, outputs, loss, predicted
             torch.cuda.empty_cache()
             gc.collect()
 
-        # Log epoch summary
-        avg_loss = epoch_loss / num_batches
+        # Calculate average loss and accuracy for the epoch
+        avg_loss = epoch_loss / len(dataloader)
         avg_accuracy = epoch_correct / epoch_total
+
         logging.info(
             f"Epoch {epoch + 1}/{epochs} Completed. "
             f"Average Loss: {avg_loss:.4f}, "
             f"Average Accuracy: {avg_accuracy:.4f}"
         )
 
+        # Free up GPU memory after each epoch
         torch.cuda.empty_cache()
         gc.collect()
-
-    # Save the trained model
+    
+    # Save the surrogate_decoder after the final epoch
     model_filename = f"surrogate_decoder_{time_string}.pt"
     torch.save(surrogate_decoder.state_dict(), model_filename)
     logging.info(f"Surrogate Decoder model saved as {model_filename}")
@@ -166,39 +171,36 @@ def generate_attack_images(
 ) -> torch.Tensor:
     """
     Generate random images for the attack.
-
-    Args:
-        gan_model (nn.Module): The GAN model to generate images.
-        image_attack_size (int): Number of attack images to generate.
-        latent_dim (int): Dimension of the latent space.
-        device (torch.device): Device for computations.
-        batch_size (int, optional): Batch size for generation. Defaults to 100.
-
-    Returns:
-        torch.Tensor: Generated attack images.
     """
     image_attack_batches = []
     num_batches = math.ceil(image_attack_size / batch_size)
 
+    # Keep GAN model on the device (GPU)
     gan_model.to(device)
 
     with torch.no_grad():
         for batch_idx in range(num_batches):
             print(f"generate_attack_images func: batch_idx={batch_idx}")
             current_batch_size = min(batch_size, image_attack_size - batch_idx * batch_size)
+            # Generate images on the device
             if is_stylegan2(gan_model):
                 z = torch.randn((current_batch_size, latent_dim), device=device)
                 x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
             else:
                 z = torch.randn(current_batch_size, latent_dim, 1, 1, device=device)
                 x_M = gan_model(z)
+            # Attack image construction 1: Generate random image for attack and append to list
             image_attack_batch = torch.rand_like(x_M)
+            # # Attack image construction 2: Use x_M directly
+            # image_attack_batch = x_M
             image_attack_batches.append(image_attack_batch.cpu())
 
+            # Clean up
             del z, x_M, image_attack_batch
             torch.cuda.empty_cache()
             gc.collect()
 
+    # Concatenate batches and move to the target device
     image_attack = torch.cat(image_attack_batches).to(device)
     del image_attack_batches
     torch.cuda.empty_cache()
@@ -219,21 +221,8 @@ def perform_pgd_attack(
 ) -> tuple:
     """
     Perform PGD attack for different alpha values.
-
-    Args:
-        surrogate_decoder (nn.Module): Trained surrogate decoder.
-        decoder (nn.Module): Real decoder for scoring.
-        image_attack (torch.Tensor): Images to attack.
-        k_auth (torch.Tensor): Authentication key.
-        max_delta (float): Maximum perturbation.
-        device (torch.device): Device for computations.
-        num_steps (int): Number of PGD steps.
-        alpha_values (list): List of step sizes to evaluate.
-        attack_batch_size (int, optional): Batch size for attack. Defaults to 10.
-
-    Returns:
-        tuple: Mean and standard deviation of attack scores.
     """
+    # Set surrogate_decoder to evaluation mode and disable gradients
     surrogate_decoder.eval()
     for param in surrogate_decoder.parameters():
         param.requires_grad = False
@@ -243,7 +232,9 @@ def perform_pgd_attack(
     k_attack_scores_mean = []
     k_attack_scores_std = []
 
-    num_attack_batches = (image_attack.size(0) + attack_batch_size - 1) // attack_batch_size
+    num_attack_batches = (
+        image_attack.size(0) + attack_batch_size - 1
+    ) // attack_batch_size
 
     for alpha in alpha_values:
         logging.info(f"Performing PGD attack with alpha = {alpha}")
@@ -251,18 +242,35 @@ def perform_pgd_attack(
 
         for batch_idx in range(num_attack_batches):
             start_idx = batch_idx * attack_batch_size
-            end_idx = min((batch_idx + 1) * attack_batch_size, image_attack.size(0))
-            image_attack_batch = image_attack[start_idx:end_idx].clone().detach().to(device)
+            end_idx = min(
+                (batch_idx + 1) * attack_batch_size, image_attack.size(0)
+            )
+            image_attack_batch = (
+                image_attack[start_idx:end_idx]
+                .clone()
+                .detach()
+                .to(device)
+            )
             image_attack_batch.requires_grad = True
             original_images = image_attack_batch.clone().detach()
-            target_labels = torch.ones(image_attack_batch.size(0), 1, device=device)
+            target_labels = torch.ones(
+                image_attack_batch.size(0), 1, dtype=torch.float32, device=device
+            )
 
+            ### FGSM
             for step in range(num_steps):
+                # Zero the gradients
                 if image_attack_batch.grad is not None:
                     image_attack_batch.grad.zero_()
+
+                # Forward Pass
                 outputs = surrogate_decoder(image_attack_batch)
                 loss = criterion(outputs, target_labels)
+
+                # Backward Pass
                 loss.backward()
+
+                # Gradient Ascent Step
                 with torch.no_grad():
                     grad_sign = image_attack_batch.grad.sign()
                     image_attack_batch = image_attack_batch + alpha * grad_sign
@@ -271,29 +279,39 @@ def perform_pgd_attack(
                         min=original_images - max_delta,
                         max=original_images + max_delta,
                     )
-                    image_attack_batch.requires_grad = True
+                    image_attack_batch.requires_grad = True  # Ensure gradients are re-enabled after modification
 
+                # Free up GPU memory after each PGD step
                 torch.cuda.empty_cache()
                 gc.collect()
 
-            # Temporary masking (consider removing if not needed)
+            # temporary: mask the images
             k_mask = generate_mask_secret_key(image_attack_batch.shape, 2024, device=device)
             image_attack_batch = mask_image_with_key(image_attack_batch, k_mask)
-
+            
+            # Compute k_attack_score for the batch using real decoder
             with torch.no_grad():
                 k_attack_batch = decoder(image_attack_batch)
 
             norm_factor = torch.sqrt(torch.tensor(len(k_auth), dtype=torch.float32))
             k_attack_score_batch = (
-                1 - torch.norm(k_auth.unsqueeze(0) - k_attack_batch, dim=1) / norm_factor
+                1
+                - torch.norm(
+                    k_auth.unsqueeze(0) - k_attack_batch, dim=1
+                )
+                / norm_factor
             ).cpu().numpy()
             k_attack_scores_alpha.extend(k_attack_score_batch)
-            logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
+            logging.info(
+                f"Batch {batch_idx + 1}/{num_attack_batches} processed."
+            )
 
+            # Free up GPU memory after each batch
             del image_attack_batch, target_labels, outputs, loss, k_attack_batch
             torch.cuda.empty_cache()
             gc.collect()
 
+        # Set the print options to ensure all elements are displayed
         np.set_printoptions(threshold=np.inf)
         print(f"k_attack_scores_alpha: {k_attack_scores_alpha}")
 
@@ -326,33 +344,15 @@ def attack_label_based(
 ) -> tuple:
     """
     Performs a label-based attack on a watermarked GAN model.
-
-    Args:
-        gan_model (nn.Module): Original GAN model.
-        watermarked_model (nn.Module): Watermarked GAN model.
-        max_delta (float): Maximum perturbation.
-        decoder (nn.Module): Decoder for scoring.
-        surrogate_decoder (nn.Module): Surrogate decoder to train.
-        k_auth (torch.Tensor): Authentication key.
-        latent_dim (int): Latent space dimension.
-        device (torch.device): Device for computations.
-        train_size (int): Training samples per class.
-        image_attack_size (int): Number of attack images.
-        batch_size (int, optional): Batch size for training. Defaults to 16.
-        epochs (int, optional): Training epochs. Defaults to 5.
-        attack_batch_size (int, optional): Batch size for attack. Defaults to 16.
-        num_steps (int, optional): PGD steps. Defaults to 50.
-        alpha_values (list, optional): Step sizes for PGD. Defaults to [1.0].
-
-    Returns:
-        tuple: Mean and standard deviation of attack scores.
     """
+    # Set up logging
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if alpha_values is None:
         alpha_values = [1.0]
 
     logging.info("Starting attack_label_based function.")
 
+    # Set models to evaluation mode and disable gradients
     gan_model.eval()
     watermarked_model.eval()
     for param in gan_model.parameters():
@@ -360,29 +360,27 @@ def attack_label_based(
     for param in watermarked_model.parameters():
         param.requires_grad = False
 
-    # Generate attack images
+    # Generate images for attack
     image_attack = generate_attack_images(
         gan_model, image_attack_size, latent_dim, device, batch_size=10
     )
     logging.info("Initialized image_attack with random images.")
 
-    # Train surrogate decoder
+    # Create Dataset for on-the-fly data generation
+    dataset = GANGeneratedDataset(
+        gan_model, watermarked_model, max_delta, latent_dim, device, train_size
+    )
+    logging.info("GANGeneratedDataset created for on-the-fly data generation.")
+
+    # Train the Surrogate Decoder
     train_surrogate_decoder(
-        surrogate_decoder=surrogate_decoder,
-        gan_model=gan_model,
-        watermarked_model=watermarked_model,
-        max_delta=max_delta,
-        latent_dim=latent_dim,
-        device=device,
-        train_size=train_size,
-        epochs=epochs,
-        batch_size=batch_size
+        surrogate_decoder, dataset, device, epochs, batch_size
     )
     logging.info("Training of surrogate decoder completed.")
 
-    # Perform PGD attack
+    # Perform PGD Attack
     k_attack_scores_mean, k_attack_scores_std = perform_pgd_attack(
-        surrogate_decoder, decoder, image_attack, k_auth,
+        surrogate_decoder, decoder, image_attack, k_auth, 
         max_delta, device, num_steps, alpha_values, attack_batch_size
     )
     logging.info("PGD attack for different alpha values completed.")
