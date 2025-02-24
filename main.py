@@ -58,7 +58,6 @@ def main():
     parser.add_argument("--surrogate_decoder_type", type=str, default="resnet152", help="Type of surrogate decoder to use for bb binary attack")
     parser.add_argument("--train_size", type=int, default=100000, help="training set size for training surrogate decoder")
     parser.add_argument("--image_attack_size", type=int, default=10000, help="size of attack image set")
-    parser.add_argument("--best_threshold", type=float, default=1.0, help="best_threshold of the trained decoder (pipeline) as input for the bb attack")
 
     # DDP arguments
     parser.add_argument("--local_rank", type=int, default=0, help="Local rank for distributed training")
@@ -278,8 +277,7 @@ def main():
             latent_dim, 
             device, 
             args.train_size, 
-            args.image_attack_size,
-            args.best_threshold, # this parameter can be deleted
+            args.image_attack_size
         )
 
 

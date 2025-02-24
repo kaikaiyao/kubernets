@@ -212,7 +212,6 @@ def perform_pgd_attack(
     decoder: nn.Module,
     image_attack: torch.Tensor,
     k_auth: torch.Tensor,
-    best_threshold: float,
     max_delta: float,
     device: torch.device,
     num_steps: int,
@@ -231,7 +230,6 @@ def perform_pgd_attack(
 
     k_attack_scores_mean = []
     k_attack_scores_std = []
-    success_rates = []
 
     num_attack_batches = (
         image_attack.size(0) + attack_batch_size - 1
@@ -302,9 +300,8 @@ def perform_pgd_attack(
                 / norm_factor
             ).cpu().numpy()
             k_attack_scores_alpha.extend(k_attack_score_batch)
-            success_rate_batch = np.mean(k_attack_score_batch > best_threshold)
             logging.info(
-                f"Batch {batch_idx + 1}/{num_attack_batches}: Success rate = {success_rate_batch:.3f}"
+                f"Batch {batch_idx + 1}/{num_attack_batches} processed."
             )
 
             # Free up GPU memory after each batch
@@ -318,17 +315,13 @@ def perform_pgd_attack(
 
         mean_score = np.mean(k_attack_scores_alpha)
         std_score = np.std(k_attack_scores_alpha)
-        success_rate = np.mean(
-            np.array(k_attack_scores_alpha) > best_threshold
-        )
         k_attack_scores_mean.append(mean_score)
         k_attack_scores_std.append(std_score)
-        success_rates.append(success_rate)
         logging.info(
-            f"Alpha = {alpha}: k_attack_score mean = {mean_score:.3f}, std = {std_score:.3f}, success_rate = {success_rate:.3f}"
+            f"Alpha = {alpha}: k_attack_score mean = {mean_score:.3f}, std = {std_score:.3f}"
         )
 
-    return k_attack_scores_mean, k_attack_scores_std, success_rates
+    return k_attack_scores_mean, k_attack_scores_std
 
 def black_box_attack_binary_based(
     gan_model: nn.Module,
@@ -386,10 +379,10 @@ def black_box_attack_binary_based(
     logging.info("Training of surrogate decoder completed.")
 
     # Perform PGD Attack
-    k_attack_scores_mean, k_attack_scores_std, success_rates = perform_pgd_attack(
-        surrogate_decoder, decoder, image_attack, k_auth, best_threshold,
+    k_attack_scores_mean, k_attack_scores_std = perform_pgd_attack(
+        surrogate_decoder, decoder, image_attack, k_auth, 
         max_delta, device, num_steps, alpha_values, attack_batch_size
     )
     logging.info("PGD attack for different alpha values completed.")
 
-    return k_attack_scores_mean, k_attack_scores_std, success_rates
+    return k_attack_scores_mean, k_attack_scores_std
