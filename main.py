@@ -13,7 +13,7 @@ from utils.gpu import get_gpu_info
 
 from training.train_model import train_model
 from evaluation.evaluate_model import evaluate_model
-from evaluation.attacks import black_box_attack_binary_based
+from attack.attacks import black_box_attack_binary_based
 
 def initialize_cuda():
     try:
@@ -67,7 +67,7 @@ def main():
     parser.add_argument("--plotting", type=bool, default=False, help="To plot the results of the evaluation")
 
     # Attack arguments
-    parser.add_argument("--attack_method", type=str, default="secure", choices=["secure", "baseline"], help="Attack method")
+    parser.add_argument("--attack_method", type=str, default="base", choices=["base", "learnable", "fixed"], help="Attack method")
     parser.add_argument("--surrogate_decoder_type", type=str, default="resnet152", help="Type of surrogate decoder to use for bb binary attack")
     parser.add_argument("--train_size", type=int, default=100000, help="training set size for training surrogate decoder")
     parser.add_argument("--image_attack_size", type=int, default=10000, help="size of attack image set")
@@ -261,38 +261,22 @@ def main():
         decoder.load_state_dict(torch.load(args.decoder_model_path))
         decoder = decoder.to(device)
 
-        if args.attack_method == "secure":
-            # from models.decoders.attack_decoder import CombinedModel
-            # surrogate_decoder = CombinedModel(
-            #     input_channels=3, 
-            #     length_k_auth=1, 
-            #     decoder_total_conv_layers=args.num_conv_layers,
-            #     decoder_total_pool_layers=args.num_pool_layers,
-            #     decoder_initial_channels=args.initial_channels,
-            # )
-
-            # We'll use a surr decoder that is same size as the original decoder for both secure pipeline and baseline for now.
-            # The combined model's intention is to see if the attack can "learn" the mask by learn the CNN, but I'm not sure if it degrades attack perf. Maybe test both and report both.
-           
-            # So we'll test these scenarios: 
-            # 1. baseline model, base surr decoder attack
-            # 2. secure pipeline model, base surr decoder attack
-            # 3. secure pipeline model, [cnn + decoder] attack (learn [cnn + decoder])
-            # 4. secure pipeline model, pass a fixed cnn, then use base surr decoder attack - here, we'll test different key options (1. original key (as a baseline comparison 2. key flip 1 bit 3. key flip 10 bit 4. a random key)
-
+        if args.attack_method in ["base", "fixed"]:
             surrogate_decoder =  FlexibleDecoder(
                 1,
                 args.num_conv_layers,
                 args.num_pool_layers,
                 args.initial_channels,
             ).to(device)
-        elif args.attack_method == "baseline":
-            surrogate_decoder =  FlexibleDecoder(
-                1,
-                args.num_conv_layers,
-                args.num_pool_layers,
-                args.initial_channels,
-            ).to(device)
+        elif args.attack_method in ["combine"]:
+            from models.decoders.attack_decoder import CombinedModel
+            surrogate_decoder = CombinedModel(
+                input_channels=3, 
+                length_k_auth=1, 
+                decoder_total_conv_layers=args.num_conv_layers,
+                decoder_total_pool_layers=args.num_pool_layers,
+                decoder_initial_channels=args.initial_channels,
+            )
 
         k_auth = torch.tensor([0], device=device)
         print(f"k_auth = {k_auth}")
