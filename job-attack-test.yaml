@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ${USER}-job-ddp
+  name: ${USER}-job-attack_test
   labels:
     eidf/user: ${USER}
     kueue.x-k8s.io/queue-name: ${INFK8S_QUEUE_NAME}
@@ -47,31 +47,32 @@ spec:
               # First try to download the model file explicitly
               curl -o ffhq70k-paper256-ada.pkl "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl"
               mkdir -p /workspace/kubernets/results
-              torchrun --nproc_per_node=8 \
+              torchrun --nproc_per_node=1 \
                       --nnodes=1 \
                       --node_rank=0 \
                       --master_addr=127.0.0.1 \
                       --master_port=12345 \
-                      main.py train \
-                      --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
-                      --batch_size=8 \
-                      --n_iterations=500000 \
-                      --num_eval_samples=10000 \
-                      --num_conv_layers=7 \
-                      --num_pool_layers=7 \
-                      --initial_channels=64 \
-                      --lr_M_hat=2e-4 \
-                      --lr_D=2e-4 \
-                      --max_delta=0.2 \
-                      --saving_path=results \
-                      --convergence_threshold=0.0000001 \
-                      --mask_switch=True
+                      main.py  attack \
+                      --attack_method "base" \
+                      --stylegan2_url "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
+                      --watermarked_model_path '/nfs-user/data/train_ffhq_encryp_300k_delta_ablation/delta_0_5/watermarked_model_20250223004630485657.pkl' \
+                      --decoder_model_path '/nfs-user/data/train_ffhq_encryp_300k_delta_ablation/delta_0_5/decoder_model_20250223004630485657.pth' \
+                      --num_conv_layers 7 \
+                      --num_pool_layers 7 \
+                      --initial_channels 64 \
+                      --num_conv_layers_surr 7 \
+                      --num_pool_layers_surr 7 \
+                      --initial_channels_surr 64 \
+                      --max_delta 0.5 \
+                      --best_threshold 0.5 \
+                      --train_size 10000 \
+                      --image_attack_size 100 \
               exit_status=$?
               echo "Python script finished with exit status $exit_status"
               sleep infinity
           resources:
             limits:
-              nvidia.com/gpu: "8"
+              nvidia.com/gpu: "1"
               cpu: "8"
               memory: "32Gi"
           volumeMounts:
@@ -82,7 +83,7 @@ spec:
       volumes:
         - name: workspace
           persistentVolumeClaim:
-            claimName: ${USER}-ws-ddp
+            claimName: ${USER}-ws-test
         - name: nfs-user
           nfs:
             server: $INFK8S_NFS_SERVER_IP

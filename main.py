@@ -257,18 +257,18 @@ def main():
         if args.attack_method in ["base", "fixed"]:
             surrogate_decoder = FlexibleDecoder(
                 1,
-                args.num_conv_layers,
-                args.num_pool_layers,
-                args.initial_channels,
+                args.num_conv_layers_surr,
+                args.num_pool_layers_surr,
+                args.initial_channels_surr,
             ).to(device)
         elif args.attack_method in ["combine"]:
             from models.decoders.attack_decoder import CombinedModel
             surrogate_decoder = CombinedModel(
                 input_channels=3, 
                 length_k_auth=1, 
-                decoder_total_conv_layers=args.num_conv_layers,
-                decoder_total_pool_layers=args.num_pool_layers,
-                decoder_initial_channels=args.initial_channels,
+                decoder_total_conv_layers=args.num_conv_layers_surr,
+                decoder_total_pool_layers=args.num_pool_layers_surr,
+                decoder_initial_channels=args.initial_channels_surr,
             )
 
         k_auth = torch.tensor([0], device=device)
@@ -278,13 +278,13 @@ def main():
             gan_model, 
             watermarked_model,
             args.max_delta,
-            decoder, # this is for verification (use the "real" pretrained decoder to verify if fake images' conf score)
+            decoder, # this is for verification (it is the "real" pretrained decoder, used to verify if fake images' conf score)
             surrogate_decoder,
             k_auth, 
             latent_dim, 
             device, 
-            args.train_size, 
-            args.image_attack_size
+            args.train_size, # training size for training surrogate decoder, usually being large to enable improve attach perf (?)
+            args.image_attack_size # how many images to do attack on (for evaluating the attack and get statistics, usually set to like 10000)
         )
 
 

@@ -78,7 +78,7 @@ def train_surrogate_decoder(
     dataset: Dataset,
     device: torch.device,
     epochs: int = 5,
-    batch_size: int = 4,
+    batch_size: int = 8,
 ) -> None:
     """
     Train the surrogate decoder.
@@ -257,6 +257,7 @@ def perform_pgd_attack(
                 image_attack_batch.size(0), 1, dtype=torch.float32, device=device
             )
 
+            ### FGSM
             for step in range(num_steps):
                 # Zero the gradients
                 if image_attack_batch.grad is not None:
