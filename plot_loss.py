@@ -27,7 +27,7 @@ def parse_log_file(log_path):
                 losses.append(loss_val)
     return iterations, losses
 
-def sample_data(iterations, losses, interval=100):
+def sample_data(iterations, losses):
     """
     Samples data at iterations: 1, 1+interval, 1+2*interval, … up to the maximum.
     If the final iteration is exactly a multiple of the interval,
@@ -87,7 +87,7 @@ def plot_loss_curves(main_folder):
         if not iterations:
             print(f"[Warning] No valid data found in {log_file}. Skipping.")
             continue
-        sample_iters, sample_losses, max_iter_adj = sample_data(iterations, losses, interval=100)
+        sample_iters, sample_losses, max_iter_adj = sample_data(iterations, losses, interval=1000)
         # Normalize iterations to [0, 1] for plotting
         x_norm = [(it - 1) / (max_iter_adj - 1) for it in sample_iters]
         data_list.append((delta_val, x_norm, sample_losses))
@@ -110,7 +110,7 @@ def plot_loss_curves(main_folder):
     for delta, x, y in data_list:
         color = colormap(norm(delta)) if (delta is not None and norm is not None) else None
         label = f"$\\delta={delta}$" if delta is not None else "Unknown"
-        ax.plot(x, y, label=label, linewidth=2)
+        ax.plot(x, y, label=label, linewidth=0.5)
 
     # Set axis labels and title
     ax.set_xlabel("Normalized Training Progress", fontsize=14)
