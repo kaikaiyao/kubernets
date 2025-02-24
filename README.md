@@ -163,7 +163,7 @@ envsubst '$USER $INFK8S_QUEUE_NAME $INFK8S_NFS_SERVER_IP' < job-array.yaml | kub
   
 - **Print Project for LLM**
   ```bash
-  { tree && find . -name "*.py" -print0 | while IFS= read -r -d '' file; do echo "=== $file ==="; cat "$file"; done; } > project_structure_and_codes.txt
+  { find . -type d -print -o -name "*.py" -print | tree -fi --fromfile && find . -name "*.py" -print0 | while IFS= read -r -d '' file; do echo "=== $file ==="; cat "$file"; done; } > project_structure_and_codes.txt
   ```
 
 - **To batch-delete jobs and pvcs for ablation study**
