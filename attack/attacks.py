@@ -19,7 +19,7 @@ def train_surrogate_decoder(
     device: torch.device,
     train_size: int,
     epochs: int = 5,
-    batch_size: int = 4,
+    batch_size: int = 16,
 ) -> None:
     """
     Train the surrogate decoder by generating batches on-the-fly on the GPU.
