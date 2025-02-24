@@ -86,10 +86,10 @@ def train_surrogate_decoder(
                 x_M_hat = constrain_image(x_M_hat, x_M, max_delta)
 
 
-            # Apply mask before training decoder (only for attack type 4!)
-            k_mask = generate_mask_secret_key(x_M_hat.shape, 2024, device=device)
-            x_M = mask_image_with_key(x_M, k_mask)
-            x_M_hat = mask_image_with_key(x_M_hat, k_mask)
+            # # Apply mask before training decoder (only for attack type 4!)
+            # k_mask = generate_mask_secret_key(x_M_hat.shape, 2024, device=device)
+            # x_M = mask_image_with_key(x_M, k_mask)
+            # x_M_hat = mask_image_with_key(x_M_hat, k_mask)
 
 
             # Create labels: 0 for x_M (original), 1 for x_M_hat (watermarked)
