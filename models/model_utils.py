@@ -1,7 +1,6 @@
 import copy
 import os
 import pickle
-import torch
 
 
 def save_finetuned_model(model, path, filename):

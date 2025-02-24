@@ -3,7 +3,8 @@ import numpy as np
 import statistics
 import math
 import matplotlib.pyplot as plt
-from training.loss_functions import get_lpips_loss
+import lpips
+
 from utils.image_utils import constrain_image
 from sklearn.metrics import roc_auc_score, roc_curve
 from torchvision.transforms.functional import to_pil_image
@@ -31,7 +32,7 @@ def evaluate_model(
     total_decoder_params = sum(p.numel() for p in decoder.parameters())
 
     # Initialize loss functions
-    lpips_loss = get_lpips_loss(device)
+    lpips_loss = lpips.LPIPS(net="vgg").to(device)
 
     # Lists to store per-image values
     scores = []

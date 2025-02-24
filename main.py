@@ -251,7 +251,7 @@ def main():
                 args.initial_channels_surr,
             ).to(device)
         elif args.attack_type in ["combined"]:
-            from models.decoders.attack_decoder import CombinedModel
+            from models.decoders.attack_combined_model import CombinedModel
             surrogate_decoder = CombinedModel(
                 input_channels=3, 
                 decoder_total_conv_layers=args.num_conv_layers_surr,
