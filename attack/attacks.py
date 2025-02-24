@@ -330,69 +330,6 @@ def perform_pgd_attack(
 
     return k_attack_scores_mean, k_attack_scores_std, success_rates
 
-def plot_k_attack_scores(
-    alpha_values: list,
-    k_attack_scores_mean: list,
-    k_attack_scores_std: list,
-    output_dir: str,
-) -> None:
-    """
-    Plot Mean and Std of k_attack_score vs Alpha.
-    """
-    # Set seaborn style
-    sns.set(style="whitegrid", context="notebook")
-
-    # Create a DataFrame for plotting
-    df_plot = pd.DataFrame({
-        'alpha': alpha_values,
-        'Mean_k_attack_score': k_attack_scores_mean,
-        'Std_k_attack_score': k_attack_scores_std
-    })
-
-    # Sort the DataFrame by alpha
-    df_plot = df_plot.sort_values('alpha').reset_index(drop=True)
-
-    # Initialize the plot
-    plt.figure(figsize=(6, 4))
-    ax = sns.lineplot(
-        x='alpha',
-        y='Mean_k_attack_score',
-        data=df_plot,
-        marker='o',
-        label='Mean $k_{attack\\_score}$'
-    )
-
-    # Add shaded area for standard deviation
-    ax.fill_between(
-        df_plot['alpha'],
-        df_plot['Mean_k_attack_score'] - df_plot['Std_k_attack_score'],
-        df_plot['Mean_k_attack_score'] + df_plot['Std_k_attack_score'],
-        alpha=0.2,
-        label='Std Dev'
-    )
-
-    # Set title and labels
-    ax.set_title('$k_{attack\\_score}$ vs Alpha')
-    ax.set_xlabel('Alpha')
-    ax.set_ylabel('Mean $k_{attack\\_score}$')
-    ax.set_ylim(0.95, 1.05)
-    ax.legend()
-
-    # Optimize layout
-    plt.tight_layout()
-
-    # Ensure output directory exists
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Define the filename
-    plot_filename = os.path.join(output_dir, 'mean_std_k_attack_score_vs_alpha.pdf')
-
-    # Save the figure
-    plt.savefig(plot_filename)
-    logging.info(f"Plot saved as {plot_filename}")
-
-    plt.close()
-
 def black_box_attack_binary_based(
     gan_model: nn.Module,
     watermarked_model: nn.Module,
@@ -454,12 +391,5 @@ def black_box_attack_binary_based(
         max_delta, device, num_steps, alpha_values, attack_batch_size
     )
     logging.info("PGD attack for different alpha values completed.")
-
-    # # Plot results (not plotting for now)
-    # plot_k_attack_scores(
-    #     alpha_values, k_attack_scores_mean, k_attack_scores_std, output_dir
-    # )
-    # logging.info("Plotting completed.")
-    # logging.info("black_box_attack_binary_based function completed.")
 
     return k_attack_scores_mean, k_attack_scores_std, success_rates
