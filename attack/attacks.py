@@ -11,6 +11,7 @@ from utils.file_utils import generate_time_based_string
 from key.key import generate_mask_secret_key, mask_image_with_key
 
 def train_surrogate_decoder(
+    attack_type: str,
     surrogate_decoder: nn.Module,
     gan_model: nn.Module,
     watermarked_model: nn.Module,
@@ -86,10 +87,11 @@ def train_surrogate_decoder(
                 x_M_hat = constrain_image(x_M_hat, x_M, max_delta)
 
 
-            # # Apply mask before training decoder (only for attack type 4!)
-            # k_mask = generate_mask_secret_key(x_M_hat.shape, 2024, device=device)
-            # x_M = mask_image_with_key(x_M, k_mask)
-            # x_M_hat = mask_image_with_key(x_M_hat, k_mask)
+            # Apply mask before training decoder (only for attack type 4!)
+            if attack_type == "fixed":
+                k_mask = generate_mask_secret_key(x_M_hat.shape, 2024, device=device)
+                x_M = mask_image_with_key(x_M, k_mask)
+                x_M_hat = mask_image_with_key(x_M_hat, k_mask)
 
 
             # Create labels: 0 for x_M (original), 1 for x_M_hat (watermarked)
@@ -316,6 +318,7 @@ def perform_pgd_attack(
     return k_attack_scores_mean, k_attack_scores_std
 
 def attack_label_based(
+    attack_type: str,
     gan_model: nn.Module,
     watermarked_model: nn.Module,
     max_delta: float,
@@ -374,6 +377,7 @@ def attack_label_based(
 
     # Train surrogate decoder
     train_surrogate_decoder(
+        attack_type=attack_type,
         surrogate_decoder=surrogate_decoder,
         gan_model=gan_model,
         watermarked_model=watermarked_model,

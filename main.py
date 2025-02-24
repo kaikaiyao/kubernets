@@ -55,7 +55,7 @@ def main():
     parser.add_argument("--plotting", type=bool, default=False, help="To plot the results of the evaluation")
 
     # Attack arguments
-    parser.add_argument("--attack_method", type=str, default="base", choices=["base", "learnable", "fixed"], help="Attack method")
+    parser.add_argument("--attack_type", type=str, default="base", choices=["base", "learnable", "fixed"], help="Attack method")
     parser.add_argument("--surrogate_decoder_type", type=str, default="resnet152", help="Type of surrogate decoder to use for bb binary attack")
     parser.add_argument("--train_size", type=int, default=100000, help="training set size for training surrogate decoder")
     parser.add_argument("--image_attack_size", type=int, default=10000, help="size of attack image set")
@@ -244,13 +244,13 @@ def main():
         decoder.load_state_dict(torch.load(args.decoder_model_path))
         decoder = decoder.to(device)
 
-        if args.attack_method in ["base", "fixed"]:
+        if args.attack_type in ["base", "fixed"]:
             surrogate_decoder = FlexibleDecoder(
                 args.num_conv_layers_surr,
                 args.num_pool_layers_surr,
                 args.initial_channels_surr,
             ).to(device)
-        elif args.attack_method in ["combine"]:
+        elif args.attack_type in ["combine"]:
             from models.decoders.attack_decoder import CombinedModel
             surrogate_decoder = CombinedModel(
                 input_channels=3, 
@@ -260,6 +260,7 @@ def main():
             )
 
         attack_label_based(
+            args.attack_type,
             gan_model, 
             watermarked_model,
             args.max_delta,
