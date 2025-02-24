@@ -27,7 +27,7 @@ def parse_log_file(log_path):
                 losses.append(loss_val)
     return iterations, losses
 
-def sample_data(iterations, losses):
+def sample_data(iterations, losses, interval):
     """
     Samples data at iterations: 1, 1+interval, 1+2*interval, … up to the maximum.
     If the final iteration is exactly a multiple of the interval,
