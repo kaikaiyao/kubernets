@@ -15,7 +15,7 @@ from utils.logging import setup_logging
 
 from training.train_model import train_model
 from evaluation.evaluate_model import evaluate_model
-from attack.attacks import black_box_attack_binary_based
+from attack.attacks import attack_label_based
 
 def main():
     parser = argparse.ArgumentParser(description="Run training or evaluation for the model.")
@@ -274,7 +274,7 @@ def main():
         k_auth = torch.tensor([0], device=device)
         logging.info(f"k_auth = {k_auth}")
 
-        black_box_attack_binary_based(
+        attack_label_based(
             gan_model, 
             watermarked_model, 
             args.max_delta,

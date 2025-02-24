@@ -321,7 +321,7 @@ def perform_pgd_attack(
 
     return k_attack_scores_mean, k_attack_scores_std
 
-def black_box_attack_binary_based(
+def attack_label_based(
     gan_model: nn.Module,
     watermarked_model: nn.Module,
     max_delta: float,
@@ -339,14 +339,14 @@ def black_box_attack_binary_based(
     alpha_values: list = None,
 ) -> tuple:
     """
-    Performs a black-box attack on a watermarked GAN model using a surrogate decoder.
+    Performs a label-based attack on a watermarked GAN model.
     """
     # Set up logging
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if alpha_values is None:
         alpha_values = [1.0]
 
-    logging.info("Starting black_box_attack_binary_based function.")
+    logging.info("Starting attack_label_based function.")
 
     # Set models to evaluation mode and disable gradients
     gan_model.eval()
