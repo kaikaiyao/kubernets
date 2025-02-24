@@ -46,9 +46,11 @@ class GANGeneratedDataset(Dataset):
 
             # Generate images on the device
             if self.is_stylegan2:
+                print("Using stylegan2")
                 x_M = self.gan_model(z, None, truncation_psi=1.0, noise_mode="const")
                 x_M_hat = self.watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
             else:
+                print("Not using stylegan2")
                 x_M = self.gan_model(z)
                 x_M_hat = self.watermarked_model(z)
 
@@ -89,7 +91,7 @@ def train_surrogate_decoder(
         dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=0,  # Ensure data loading happens in main process
+        num_workers=0,
         pin_memory=True,
     )
 
@@ -178,6 +180,7 @@ def generate_attack_images(
 
     with torch.no_grad():
         for batch_idx in range(num_batches):
+            print(f"generate_attack_images func: batch_idx={batch_idx}")
             current_batch_size = min(batch_size, image_attack_size - batch_idx * batch_size)
             # Generate images on the device
             if is_stylegan2(gan_model):

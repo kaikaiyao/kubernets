@@ -276,9 +276,9 @@ def main():
 
         attack_label_based(
             gan_model, 
-            watermarked_model, 
+            watermarked_model,
             args.max_delta,
-            decoder, 
+            decoder, # this is for verification (use the "real" pretrained decoder to verify if fake images' conf score)
             surrogate_decoder,
             k_auth, 
             latent_dim, 
