@@ -57,7 +57,8 @@ class GANGeneratedDataset(Dataset):
             # Constrain the watermarked image
             x_M_hat = constrain_image(x_M_hat, x_M, self.max_delta)
 
-            # # Put mask on before passing to decoder if mask_switch is on
+            # # Put mask on before passing to decoder
+            # # Noted: This is used for key sensitivity study - i.e. when you change one bit of the key, how does attack perform etc
             # k_mask = generate_mask_secret_key(x_M_hat.shape, 2025, device='cuda')
             # x_M = mask_image_with_key(x_M, k_mask, 0.2)
             # x_M_hat = mask_image_with_key(x_M_hat, k_mask, 0.2)
