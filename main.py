@@ -9,24 +9,11 @@ from models.stylegan2 import load_stylegan2_model
 from models.gan import load_gan_model
 from models.decoders.decoder import FlexibleDecoder
 from utils.model_utils import clone_model, load_finetuned_model
-from utils.gpu import get_gpu_info
+from utils.gpu import get_gpu_info, initialize_cuda
 
 from training.train_model import train_model
 from evaluation.evaluate_model import evaluate_model
 from attack.attacks import black_box_attack_binary_based
-
-def initialize_cuda():
-    try:
-        if not torch.cuda.is_available():
-            return torch.device("cpu")
-        _ = torch.empty(1).cuda()
-        print(f"Discovered {torch.cuda.device_count()} GPUs")
-        for i in range(torch.cuda.device_count()):
-            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-        return torch.device("cuda")
-    except Exception as e:
-        print(f"CUDA initialization failed: {str(e)}")
-        return torch.device("cpu")
 
 def main():
     parser = argparse.ArgumentParser(description="Run training or evaluation for the model.")
