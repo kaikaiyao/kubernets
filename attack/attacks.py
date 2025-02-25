@@ -285,6 +285,8 @@ def perform_pgd_attack(
             # (surrogate decoder's labeling as you can see in above function, labels the watermarked image (attack image goal) to 1) 
             # so, k_attack_batch -> 0 if attack is good, thus k_attack_score_batch -> 1 if attack is good, so the score is 1 if attack is good
             # so after the k_auth refactor of the code base, this still makes sense.
+
+            # mimic the verification API
             with torch.no_grad():
                 if attack_type in ["base_baseline"]:
                     k_attack_batch = decoder(image_attack_batch)
