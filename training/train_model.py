@@ -156,6 +156,23 @@ def train_model(
         del loss, d_k_M_hat, d_k_M
         torch.cuda.empty_cache()
 
+    # Save final models
+    if rank == 0:
+        checkpoint = {
+            'watermarked_model': watermarked_model.module.state_dict(),
+            'decoder': decoder.module.state_dict(),
+            'optimizer_M_hat': optimizer_M_hat.state_dict(),
+            'optimizer_D': optimizer_D.state_dict(),
+            'iteration': n_iterations - 1,
+            'loss_history': loss_history,
+        }
+        checkpoint_path = os.path.join(saving_path, f'checkpoint_final_{time_string}.pt')
+        torch.save(checkpoint, checkpoint_path)
+
+        save_finetuned_model(watermarked_model.module, saving_path, f'watermarked_model_final_{time_string}.pkl')
+        torch.save(decoder.module.state_dict(), os.path.join(saving_path, f'decoder_model_final_{time_string}.pth'))
+        logging.info(f"Final models saved at iteration {n_iterations}, time_string = {time_string}")
+
     # Final evaluation and logging
     if rank == 0:
         logging.info("Training completed.")
@@ -191,23 +208,6 @@ def train_model(
                 f"mean_max_delta: {mean_max_delta:.4f}, "
                 f"total_decoder_params: {total_decoder_params}"
             )
-
-    # Save final models
-    if rank == 0:
-        checkpoint = {
-            'watermarked_model': watermarked_model.module.state_dict(),
-            'decoder': decoder.module.state_dict(),
-            'optimizer_M_hat': optimizer_M_hat.state_dict(),
-            'optimizer_D': optimizer_D.state_dict(),
-            'iteration': n_iterations - 1,
-            'loss_history': loss_history,
-        }
-        checkpoint_path = os.path.join(saving_path, f'checkpoint_final_{time_string}.pt')
-        torch.save(checkpoint, checkpoint_path)
-
-        save_finetuned_model(watermarked_model.module, saving_path, f'watermarked_model_final_{time_string}.pkl')
-        torch.save(decoder.module.state_dict(), os.path.join(saving_path, f'decoder_model_final_{time_string}.pth'))
-        logging.info(f"Final models saved at iteration {n_iterations}, time_string = {time_string}")
 
     # Cleanup
     if rank == 0:
