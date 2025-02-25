@@ -61,7 +61,7 @@ spec:
                       --seed_key 2024 \
                       --max_delta 0.5 \
                       --mask_switch True \
-                      --flip_key_type "1" 
+                      --flip_key_type "10" 
               exit_status=$?
               echo "Python script finished with exit status $exit_status"
               sleep infinity
