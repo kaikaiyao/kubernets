@@ -262,7 +262,7 @@ def main():
             gan_model, 
             watermarked_model,
             args.max_delta,
-            decoder, # this is for verification (it is the "real" pretrained decoder, used to verify if fake images' conf score)
+            decoder, # this is for the purpose of verification (it is the "real" pretrained decoder, used to verify if fake images' conf score - NOTE: but note that for secure model, you need to pass the filter first and then this)
             surrogate_decoder,
             latent_dim, 
             device, 
