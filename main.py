@@ -45,7 +45,7 @@ def main():
     parser.add_argument("--lr_D", type=float, default=1e-4, help="Learning rate for the decoder")
     parser.add_argument("--max_delta", type=float, default=0.01, help="Maximum allowed change per pixel (infinite norm constraint)")
     parser.add_argument("--run_eval", type=bool, default=True, help="Run evaluation function during training")
-    parser.add_argument("--convergence_threshold", type=float, default=0.005, help="Threshold between loss_key diff of each 2000 epochs to determine convergence.")
+    parser.add_argument("--convergence_threshold", type=float, default=0.005, help="Threshold between loss diff of each 2000 epochs to determine convergence.")
     parser.add_argument("--mask_switch", type=bool, default=False, help="To apply the new masking pipeline")
     parser.add_argument("--resume_checkpoint", type=str, help="Path to a checkpoint file to resume training")
 
@@ -144,7 +144,7 @@ def main():
             optimizer_D.load_state_dict(checkpoint['optimizer_D'])
             
             start_iter = checkpoint['iteration'] + 1
-            initial_loss_history = checkpoint['loss_key_history']
+            initial_loss_history = checkpoint['loss_history']
             
             if args.rank == 0:
                 logging.info(f"Resuming training from iteration {start_iter}")

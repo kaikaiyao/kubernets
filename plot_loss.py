@@ -11,12 +11,12 @@ def parse_log_file(log_path):
     """
     Parses a training log file to extract iterations and corresponding loss values.
     Each log line is expected to contain something like:
-      "2025-02-24 06:59:58 - Train Iteration 300000: loss_key: 0.0000, ..."
+      "2025-02-24 06:59:58 - Train Iteration 300000: loss: 0.0000, ..."
     """
     iterations = []
     losses = []
-    # Regex pattern to capture the iteration number and loss value after 'loss_key:'
-    pattern = re.compile(r"Train Iteration\s+(\d+):\s+loss_key:\s+([\d\.-]+)")
+    # Regex pattern to capture the iteration number and loss value after 'loss:'
+    pattern = re.compile(r"Train Iteration\s+(\d+):\s+loss:\s+([\d\.-]+)")
     with open(log_path, 'r') as f:
         for line in f:
             match = pattern.search(line)

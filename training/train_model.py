@@ -51,7 +51,7 @@ def train_model(
     watermarked_model.train()
     decoder.train()
 
-    loss_key_history = initial_loss_history if initial_loss_history is not None else []
+    loss_history = initial_loss_history if initial_loss_history is not None else []
     converged = False
 
     for i in range(start_iter, n_iterations):
@@ -138,35 +138,34 @@ def train_model(
         optimizer_M_hat.zero_grad(set_to_none=True)
         optimizer_D.zero_grad(set_to_none=True)
 
-        loss = loss_key
         loss.backward()
 
         optimizer_M_hat.step()
         optimizer_D.step()
 
-        loss_key_history.append(loss_key.item())
+        loss_history.append(loss.item())
 
         if rank == 0 and i % 100 == 0:
             logging.info(
                 f"Train Iteration {i + 1}: "
-                f"loss_key: {loss_key.item():.4f}, "
+                f"loss: {loss.item():.4f}, "
                 f"d_k_M_hat.max(): {d_k_M_hat.max().item():.4f}, "
                 f"d_k_M.min(): {d_k_M.min().item():.4f}"
             )
 
-        del loss, loss_key, d_k_M_hat, d_k_M
+        del loss, loss, d_k_M_hat, d_k_M
         torch.cuda.empty_cache()
 
         # Synchronize and check convergence
         if (i + 1) % 2000 == 0 and (i + 1) >= 4000:
-            current_avg_loss_key = np.mean(loss_key_history[-2000:])
-            previous_avg_loss_key = np.mean(loss_key_history[-4000:-2000])
-            loss_key_diff = abs(current_avg_loss_key - previous_avg_loss_key)
+            current_avg_loss = np.mean(loss_history[-2000:])
+            previous_avg_loss = np.mean(loss_history[-4000:-2000])
+            loss_diff = abs(current_avg_loss - previous_avg_loss)
             
             if rank == 0:
-                logging.info(f"Iter {i + 1}, loss_key diff: {loss_key_diff:.4f}")
+                logging.info(f"Iter {i + 1}, loss diff: {loss_diff:.4f}")
                 
-                if loss_key_diff < convergence_threshold:
+                if loss_diff < convergence_threshold:
                     converged = True
                     logging.info(f"Converged at iter {i + 1}")
                     
@@ -208,7 +207,7 @@ def train_model(
                         'optimizer_M_hat': optimizer_M_hat.state_dict(),
                         'optimizer_D': optimizer_D.state_dict(),
                         'iteration': i,
-                        'loss_key_history': loss_key_history,
+                        'loss_history': loss_history,
                     }
                     checkpoint_path = os.path.join(saving_path, f'checkpoint_{time_string}.pt')
                     torch.save(checkpoint, checkpoint_path)
@@ -220,10 +219,10 @@ def train_model(
 
     if not converged:
         convergence_score = None
-        if len(loss_key_history) >= 4000:
-            current_avg_loss_key = np.mean(loss_key_history[-2000:])
-            previous_avg_loss_key = np.mean(loss_key_history[-4000:-2000])
-            convergence_score = abs(current_avg_loss_key - previous_avg_loss_key)
+        if len(loss_history) >= 4000:
+            current_avg_loss = np.mean(loss_history[-2000:])
+            previous_avg_loss = np.mean(loss_history[-4000:-2000])
+            convergence_score = abs(current_avg_loss - previous_avg_loss)
         
         if rank == 0:
             logging.info(
@@ -272,7 +271,7 @@ def train_model(
             'optimizer_M_hat': optimizer_M_hat.state_dict(),
             'optimizer_D': optimizer_D.state_dict(),
             'iteration': n_iterations - 1,
-            'loss_key_history': loss_key_history,
+            'loss_history': loss_history,
         }
         checkpoint_path = os.path.join(saving_path, f'checkpoint_final_{time_string}.pt')
         torch.save(checkpoint, checkpoint_path)
