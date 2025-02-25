@@ -109,7 +109,7 @@ def generate_mask_secret_key(
     if flip_key_type == "none":
         pass
     else:
-        binary_key = flip_key(binary_key=binary_key, flip_key_type=flip_key_type)
+        binary_key = flip_key(input_key=binary_key, flip_key_type=flip_key_type)
 
     # Create and freeze CNN
     mask_generator = CryptoCNN(channels, channels, binary_key).to(device)
