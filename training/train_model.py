@@ -153,7 +153,7 @@ def train_model(
                 f"d_k_M.min(): {d_k_M.min().item():.4f}"
             )
 
-        del loss, loss, d_k_M_hat, d_k_M
+        del loss, d_k_M_hat, d_k_M
         torch.cuda.empty_cache()
 
         # Synchronize and check convergence
