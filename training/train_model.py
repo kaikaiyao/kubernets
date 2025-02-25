@@ -189,10 +189,12 @@ def train_model(
                             )
                         auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
                     
+                    auc_str = f"{auc:.4f}" if auc is not None else "None"
+                    tpr_str = f"{tpr_at_1_fpr:.4f}" if tpr_at_1_fpr is not None else "None"
                     logging.info(
                         f"Eval after convergence at iteration {i + 1}: "
-                        f"AUC score: {f"{auc:.4f}" if auc is not None else "None"}, "
-                        f"tpr_at_1_fpr: {f"{tpr_at_1_fpr:.4f}" if tpr_at_1_fpr is not None else "None"}, "
+                        f"AUC score: {auc_str}, "
+                        f"tpr_at_1_fpr: {tpr_str}, "
                         f"lpips_loss: {lpips_loss:.4f}, "
                         f"fid_score: {fid_score:.4f}, "
                         f"mean_max_delta: {mean_max_delta:.4f}, "
@@ -249,10 +251,13 @@ def train_model(
                     )
                     auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
                 
+                auc_str = f"{auc:.4f}" if auc is not None else "None"
+                tpr_str = f"{tpr_at_1_fpr:.4f}" if tpr_at_1_fpr is not None else "None"
+
                 logging.info(
                     f"Eval after training completion at iteration {n_iterations}: "
-                    f"AUC score: {f'{auc:.4f}' if auc is not None else 'None'}, "
-                    f"tpr_at_1_fpr: {f'{tpr_at_1_fpr:.4f}' if tpr_at_1_fpr is not None else 'None'}, "
+                    f"AUC score: {auc_str}, "
+                    f"tpr_at_1_fpr: {tpr_str}, "
                     f"lpips_loss: {lpips_loss:.4f}, "
                     f"fid_score: {fid_score:.4f}, "
                     f"mean_max_delta: {mean_max_delta:.4f}, "
