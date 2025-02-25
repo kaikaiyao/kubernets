@@ -173,7 +173,6 @@ def train_model(
         torch.save(decoder.module.state_dict(), os.path.join(saving_path, f'decoder_model_final_{time_string}.pth'))
         logging.info(f"Final models saved at iteration {n_iterations}, time_string = {time_string}")
 
-
     # Final evaluation and logging
     if rank == 0:
         logging.info("Training completed.")
