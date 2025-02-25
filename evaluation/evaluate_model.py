@@ -125,7 +125,7 @@ def process_batch(
         x_M_hat = constrain_image(x_M_hat, x_M, max_delta)
 
     # Calculate image differences
-    delta_metrics = calculate_delta_metrics(x_M, x_M_hat, current_batch_size)
+    delta_metrics = calculate_delta_metrics(x_M, x_M_hat, current_batch_size, lpips_loss)
     metrics['max_deltas'].extend(delta_metrics['max_deltas'])
     metrics['lpips_losses'].extend(delta_metrics['lpips_losses'])
 
@@ -153,14 +153,18 @@ def generate_images(gan_model, watermarked_model, batch_size, latent_dim, device
         x_M_hat = watermarked_model(z)
     return z, x_M, x_M_hat
 
-def calculate_delta_metrics(x_M, x_M_hat, batch_size):
+def calculate_delta_metrics(x_M, x_M_hat, batch_size, lpips_loss):
     """Calculate image difference metrics"""
     delta = x_M_hat - x_M
     abs_delta = torch.abs(delta)
     
+    # Move inputs to same device as LPIPS model
+    x_M_hat = x_M_hat.to(lpips_loss.device)
+    x_M = x_M.to(lpips_loss.device)
+    
     return {
         'max_deltas': abs_delta.view(batch_size, -1).max(dim=1)[0].tolist(),
-        'lpips_losses': lpips.LPIPS(net="vgg")(x_M_hat, x_M).squeeze().tolist()
+        'lpips_losses': lpips_loss(x_M_hat, x_M).squeeze().tolist()
     }
 
 def process_watermark_detection(x_M, x_M_hat, decoder, mask_switch, seed_key, device, metrics, batch_size):
