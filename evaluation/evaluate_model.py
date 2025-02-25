@@ -46,6 +46,7 @@ def evaluate_model(
     decoder.eval()
     
     total_decoder_params = sum(p.numel() for p in decoder.parameters())
+    lpips_loss = lpips.LPIPS(net="vgg").to(device)
     fid_metric = FrechetInceptionDistance().to(device)
 
     # Data collection structures
@@ -74,6 +75,7 @@ def evaluate_model(
             mask_switch=mask_switch,
             seed_key=seed_key,
             batch_size=batch_size,
+            lpips_loss=lpips_loss,
             fid_metric=fid_metric,
             metrics=metrics,
             plotting=plotting,
@@ -105,6 +107,7 @@ def process_batch(
     mask_switch: bool,
     seed_key: int,
     batch_size: int,
+    lpips_loss: torch.nn.Module,
     fid_metric: FrechetInceptionDistance,
     metrics: dict,
     plotting: bool,
@@ -122,8 +125,7 @@ def process_batch(
         x_M_hat = constrain_image(x_M_hat, x_M, max_delta)
 
     # Calculate image differences
-    x_M = x_M.to(device); x_M_hat = x_M_hat.to(device)
-    delta_metrics = calculate_delta_metrics(x_M, x_M_hat, current_batch_size)
+    delta_metrics = calculate_delta_metrics(x_M, x_M_hat, current_batch_size, lpips_loss)
     metrics['max_deltas'].extend(delta_metrics['max_deltas'])
     metrics['lpips_losses'].extend(delta_metrics['lpips_losses'])
 
@@ -151,14 +153,14 @@ def generate_images(gan_model, watermarked_model, batch_size, latent_dim, device
         x_M_hat = watermarked_model(z)
     return z, x_M, x_M_hat
 
-def calculate_delta_metrics(x_M, x_M_hat, batch_size):
+def calculate_delta_metrics(x_M, x_M_hat, batch_size, lpips_loss):
     """Calculate image difference metrics"""
     delta = x_M_hat - x_M
     abs_delta = torch.abs(delta)
     
     return {
         'max_deltas': abs_delta.view(batch_size, -1).max(dim=1)[0].tolist(),
-        'lpips_losses': lpips.LPIPS(net="vgg")(x_M_hat, x_M).squeeze().tolist()
+        'lpips_losses': lpips_loss(x_M_hat, x_M).squeeze().tolist()
     }
 
 def process_watermark_detection(x_M, x_M_hat, decoder, mask_switch, seed_key, device, metrics, batch_size):
