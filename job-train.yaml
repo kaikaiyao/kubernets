@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ${USER}-job-ablation-${INDEX}
+  name: ${USER}-job-train-ablation-${INDEX}
   labels:
     eidf/user: ${USER}
     kueue.x-k8s.io/queue-name: ${INFK8S_QUEUE_NAME}
@@ -71,8 +71,8 @@ spec:
           resources:
             limits:
               nvidia.com/gpu: "4"
-              cpu: "64"
-              memory: "256Gi"
+              cpu: "32"
+              memory: "1286Gi"
           volumeMounts:
             - name: workspace
               mountPath: /workspace/kubernets/results
