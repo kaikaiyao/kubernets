@@ -243,7 +243,7 @@ def main():
         decoder.load_state_dict(torch.load(args.decoder_model_path))
         decoder = decoder.to(device)
 
-        if args.attack_type in ["base_baseline", "base_secure", "fixed_secure"]:
+        if args.attack_type in ["base_baseline", "base_secure"]:
             surrogate_decoder = FlexibleDecoder(
                 args.num_conv_layers_surr,
                 args.num_pool_layers_surr,
@@ -255,6 +255,24 @@ def main():
                 decoder_total_conv_layers=args.num_conv_layers_surr,
                 decoder_total_pool_layers=args.num_pool_layers_surr,
                 decoder_initial_channels=args.initial_channels_surr,
+                trainable_cnn=True,
+                cnn_mode="fresh",
+            )
+        elif args.attack_type in ["fixed_secure"]:
+            from key.key import generate_mask_secret_key
+            mask_cnn = generate_mask_secret_key(
+                image_shape=(1, 3, 256, 256),
+                seed=2024,
+                device='cuda',
+            )
+            surrogate_decoder = CombinedModel(
+                input_channels=3, 
+                decoder_total_conv_layers=args.num_conv_layers_surr,
+                decoder_total_pool_layers=args.num_pool_layers_surr,
+                decoder_initial_channels=args.initial_channels_surr,
+                trainable_cnn=False,
+                cnn_instance=mask_cnn,
+                cnn_mode="fixed",
             )
 
         attack_label_based(

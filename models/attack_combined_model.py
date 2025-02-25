@@ -3,10 +3,9 @@ import torch.nn as nn
 
 from models.decoder import FlexibleDecoder
 
-
-class TrainableCNN(nn.Module):
+class CNN(nn.Module):
     def __init__(self, input_channels, output_channels):
-        super(TrainableCNN, self).__init__()
+        super(CNN, self).__init__()
         self.conv1 = nn.Conv2d(input_channels, 64, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
@@ -15,30 +14,41 @@ class TrainableCNN(nn.Module):
         self.relu = nn.ReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through the network."""
         x = self.relu(self.conv1(x))
         x = self.relu(self.conv2(x))
         x = self.relu(self.conv3(x))
         x = self.relu(self.conv4(x))
         return self.conv5(x)
 
-
-
 class CombinedModel(nn.Module):
     def __init__(self, input_channels=3,
-                 decoder_total_conv_layers=5, decoder_total_pool_layers=2, 
-                 decoder_initial_channels=64):
-        """
-        Combined model replicating the pipeline of: Image -> Trainable CNN -> Decoder.
+                 decoder_total_conv_layers=5,
+                 decoder_total_pool_layers=2,
+                 decoder_initial_channels=64,
+                 cnn_mode: str = "trainable",  # "fixed", "trainable", or "fresh"
+                 cnn_instance: nn.Module = None):
+        super().__init__()
         
-        Args:
-            input_channels (int): Number of input channels for the CNN (e.g. 3 for RGB).
-            decoder_total_conv_layers (int): Total conv layers in the decoder.
-            decoder_total_pool_layers (int): Total pool layers in the decoder.
-            decoder_initial_channels (int): Initial channels for the decoder.
-        """
-        super(CombinedModel, self).__init__()
-        self.cnn = TrainableCNN(input_channels=input_channels, output_channels=input_channels) # Trainable CNN, with same structure to the masked key CNN
+        # Validate mode
+        valid_modes = ["fixed", "trainable", "fresh"]
+        if cnn_mode not in valid_modes:
+            raise ValueError(f"Invalid cnn_mode: {cnn_mode}. Choose from {valid_modes}")
+        
+        # CNN configuration
+        if cnn_mode in ["fixed", "trainable"]:
+            if cnn_instance is None:
+                raise ValueError("cnn_instance required for 'fixed' or 'trainable' modes")
+            
+            self.cnn = cnn_instance
+            # Set parameter trainability
+            for param in self.cnn.parameters():
+                param.requires_grad = (cnn_mode == "trainable")
+        else:  # fresh mode
+            # Create new CNN with same architecture but fresh initialization
+            self.cnn = CNN(input_channels=input_channels,
+                          output_channels=input_channels)
+            
+        # Decoder remains always trainable
         self.decoder = FlexibleDecoder(
             total_conv_layers=decoder_total_conv_layers,
             total_pool_layers=decoder_total_pool_layers,
