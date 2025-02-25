@@ -57,7 +57,7 @@ spec:
               sleep infinity
           resources:
             limits:
-              nvidia.com/gpu: "8"
+              nvidia.com/gpu: "4"
               cpu: "64"
               memory: "256Gi"
           volumeMounts:
