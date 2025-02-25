@@ -255,7 +255,7 @@ def main():
                 decoder_total_conv_layers=args.num_conv_layers_surr,
                 decoder_total_pool_layers=args.num_pool_layers_surr,
                 decoder_initial_channels=args.initial_channels_surr,
-                trainable_cnn=True,
+                cnn_instance=None,
                 cnn_mode="fresh",
             )
         elif args.attack_type in ["fixed_secure"]:
@@ -270,7 +270,6 @@ def main():
                 decoder_total_conv_layers=args.num_conv_layers_surr,
                 decoder_total_pool_layers=args.num_pool_layers_surr,
                 decoder_initial_channels=args.initial_channels_surr,
-                trainable_cnn=False,
                 cnn_instance=mask_cnn,
                 cnn_mode="fixed",
             )

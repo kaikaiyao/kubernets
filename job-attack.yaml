@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ${USER}-job-attack-test-fixed-secure
+  name: ${USER}-job-attack
   labels:
     eidf/user: ${USER}
     kueue.x-k8s.io/queue-name: ${INFK8S_QUEUE_NAME}
@@ -45,7 +45,6 @@ spec:
               echo "Running experiment"
               mkdir -p /workspace/kubernets/results
               curl -o ffhq70k-paper256-ada.pkl "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl"
-              mkdir -p /workspace/kubernets/results
               torchrun --nproc_per_node=1 \
                       --nnodes=1 \
                       --node_rank=0 \
