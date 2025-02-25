@@ -58,8 +58,8 @@ spec:
           resources:
             limits:
               nvidia.com/gpu: "8"
-              cpu: "32"
-              memory: "64Gi"
+              cpu: "64"
+              memory: "256Gi"
           volumeMounts:
             - name: workspace
               mountPath: /workspace/kubernets/results
