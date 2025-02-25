@@ -26,7 +26,7 @@ def evaluate_model(
     max_delta: float,
     mask_switch: bool,
     seed_key: int,
-    flip_key: str,
+    flip_key_type: str,
     batch_size: int = 8
 ) -> Tuple[float, float, float, float, float, int]:
     """
@@ -81,7 +81,7 @@ def evaluate_model(
             fid_metric=fid_metric,
             metrics=metrics,
             plotting=plotting,
-            flip_key=flip_key,
+            flip_key_type=flip_key_type,
             num_images=num_images
         )
 
@@ -114,7 +114,7 @@ def process_batch(
     fid_metric: FrechetInceptionDistance,
     metrics: dict,
     plotting: bool,
-    flip_key: str,
+    flip_key_type: str,
     num_images: int
 ) -> None:
     """Process a single batch of images"""
@@ -136,7 +136,7 @@ def process_batch(
 
     # Process watermark detection
     process_watermark_detection(
-        x_M, x_M_hat, x_rand, decoder, mask_switch, seed_key, device, metrics, current_batch_size, flip_key
+        x_M, x_M_hat, x_rand, decoder, mask_switch, seed_key, device, metrics, current_batch_size, flip_key_type
     )
 
     # Update FID metric
@@ -168,11 +168,11 @@ def calculate_delta_metrics(x_M, x_M_hat, batch_size, lpips_loss):
         'lpips_losses': lpips_loss(x_M_hat, x_M).squeeze().tolist()
     }
 
-def process_watermark_detection(x_M, x_M_hat, x_rand, decoder, mask_switch, seed_key, device, metrics, batch_size, flip_key):
+def process_watermark_detection(x_M, x_M_hat, x_rand, decoder, mask_switch, seed_key, device, metrics, batch_size, flip_key_type):
     """Process watermark detection and score calculation for original, watermarked, and random images"""
     # Apply mask if enabled
     if mask_switch:
-        k_mask = generate_mask_secret_key(x_M_hat.shape, seed_key, device=device, flip_key=flip_key)
+        k_mask = generate_mask_secret_key(x_M_hat.shape, seed_key, device=device, flip_key_type=flip_key_type)
         x_M_mask = mask_image_with_key(x_M, k_mask)
         x_M_hat_mask = mask_image_with_key(x_M_hat, k_mask)
         x_rand_mask = mask_image_with_key(x_rand, k_mask)

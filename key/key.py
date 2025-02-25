@@ -87,7 +87,7 @@ def generate_mask_secret_key(
     image_shape: Tuple[int, int, int, int],
     seed: int,
     device: str = 'cpu',
-    flip_key: str = 'none',
+    flip_key_type: str = 'none',
 ) -> nn.Module:
     """Generates a frozen CNN-based mask generator with cryptographic initialization.
     
@@ -106,20 +106,10 @@ def generate_mask_secret_key(
     binary_key = random.getrandbits(256).to_bytes(32, 'big')
 
     # Flip the encryption key (for evaluation)
-    print("I'm at A")
-    if flip_key == "none":
-        print("I'm not flipping bits")
+    if flip_key_type == "none":
         pass
-    elif flip_key == "1":
-        print("I'm flipping the key for 1 bit")
-        binary_key = flip_key(binary_key, "1")
-    elif flip_key == "10":
-        print("I'm flipping the key for 10 bits")
-        binary_key = flip_key(binary_key, "10")
-    elif flip_key == "random":
-        print("I'm flipping the key for all bits")
-        binary_key = flip_key(binary_key, "random")
-    print("I'm at B")
+    else:
+        binary_key = flip_key(binary_key=binary_key, flip_key_type=flip_key_type)
 
     # Create and freeze CNN
     mask_generator = CryptoCNN(channels, channels, binary_key).to(device)

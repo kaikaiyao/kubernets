@@ -2,10 +2,10 @@ import os
 import random
 import logging
 
-def flip_key(input_key: bytes, flip_type: str) -> bytes:
-    """Flips bits in a 256-bit (32-byte) key according to the chosen flip_type.
+def flip_key(input_key: bytes, flip_key_type: str) -> bytes:
+    """Flips bits in a 256-bit (32-byte) key according to the chosen flip_key_type.
     
-    flip_type options:
+    flip_key_type options:
       "1"      - Flip exactly one random bit.
       "10"     - Flip exactly 10 unique random bits.
       "random" - Flip every bit with a random mask, resulting in a completely random key.
@@ -16,7 +16,7 @@ def flip_key(input_key: bytes, flip_type: str) -> bytes:
     # Create a mutable copy of the key
     mutable_key = bytearray(input_key)
     
-    if flip_type == "1":
+    if flip_key_type == "1":
         # Choose one random bit position (0 to 255)
         bit_to_flip = random.randint(0, 255)
         logging.info(f"Flipping bit #{bit_to_flip}")
@@ -25,7 +25,7 @@ def flip_key(input_key: bytes, flip_type: str) -> bytes:
         mutable_key[byte_index] ^= (1 << (7 - bit_index))  # Big-endian bit order
         return bytes(mutable_key)
     
-    elif flip_type == "10":
+    elif flip_key_type == "10":
         # Choose 10 unique random bit positions (0 to 255)
         bit_positions = random.sample(range(256), 10)
         logging.info(f"Flipping bits at positions: {bit_positions}")
@@ -35,7 +35,7 @@ def flip_key(input_key: bytes, flip_type: str) -> bytes:
             mutable_key[byte_index] ^= (1 << (7 - bit_index))
         return bytes(mutable_key)
     
-    elif flip_type == "random":
+    elif flip_key_type == "random":
         # Generate a random 256-bit mask and XOR it with the input key.
         random_mask = os.urandom(32)
         logging.info("Flipping key to a completely random key using XOR with a random mask")
@@ -43,4 +43,4 @@ def flip_key(input_key: bytes, flip_type: str) -> bytes:
         return new_key
     
     else:
-        raise ValueError("Invalid flip_type. Choose '1', '10', or 'random'.")
+        raise ValueError("Invalid flip_key_type. Choose '1', '10', or 'random'.")
