@@ -1,214 +1,92 @@
-import torch
-import os
-import gc
-import numpy as np
-import logging
-from torch.nn.parallel import DistributedDataParallel as DDP
-
-from models.model_utils import save_finetuned_model
-from evaluation.evaluate_model import evaluate_model
-from models.stylegan2 import is_stylegan2
-from utils.image_utils import constrain_image
-from key.key import generate_mask_secret_key, mask_image_with_key
-
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-
-
-def train_model(
-    time_string,
-    gan_model,
-    watermarked_model,
-    decoder,
-    n_iterations,
-    latent_dim,
-    batch_size,
-    device,
-    run_eval,
-    num_images,
-    plotting,
-    max_delta,
-    saving_path,
-    mask_switch,
-    seed_key,
-    optimizer_M_hat,
-    optimizer_D,
-    start_iter=0,
-    initial_loss_history=None,
-    rank=0,
-    world_size=1,
-):
-    if rank == 0:
-        logging.info(f"World size: {world_size}")
-        logging.info(f"max_delta = {max_delta}")
-        logging.info(f"time_string = {time_string}")
-        logging.info("Decoder structure:\n%s", decoder.module if isinstance(decoder, DDP) else decoder)
-        logging.info(f"Decoder parameters: {sum(p.numel() for p in decoder.parameters())}")
-
-    gan_model.eval()
-    watermarked_model.train()
-    decoder.train()
-
-    loss_history = initial_loss_history if initial_loss_history is not None else []
-
-    for i in range(start_iter, n_iterations):
-        torch.cuda.empty_cache()
-        gc.collect()
-
-        # Generate different noise on each device
-        torch.manual_seed(seed_key + i * world_size + rank)
-        z = torch.randn((batch_size, latent_dim), device=device)
-
-        with torch.no_grad():
-            if is_stylegan2(gan_model):
-                x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
-            else:
-                x_M = gan_model(z)
-
-        if is_stylegan2(gan_model):
-            x_M_hat = watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
-        else:
-            x_M_hat = watermarked_model(z)
-        
-        x_M_hat_constrained = constrain_image(x_M_hat, x_M, max_delta)
-
-        if mask_switch:
-            if i == 0 or start_iter != 0:
-                k_mask = generate_mask_secret_key(x_M_hat_constrained.shape, seed_key, device=device)
-
-            x_M_original = x_M.clone().detach()
-            x_M_hat_constrained_original = x_M_hat_constrained.clone().detach()
-
-            x_M = mask_image_with_key(x_M, k_mask)
-            x_M_hat_constrained = mask_image_with_key(x_M_hat_constrained, k_mask)
-
-            if plotting and rank == 0 and (i == 0 or i == 99999):
-                os.makedirs(saving_path, exist_ok=True)
-                with PdfPages(os.path.join(saving_path, 'first_iteration_images.pdf')) as pdf:
-                    fig, axes = plt.subplots(4, 8, figsize=(20, 12))
-                    fig.suptitle("First Iteration Images", fontsize=16)
-
-                    for idx in range(8):
-                        def normalize_image(img):
-                            img = img.cpu().detach().numpy()
-                            img_min = img.min()
-                            img_max = img.max()
-                            img = (img - img_min) / (img_max - img_min) * 255.0
-                            return img.astype('uint8')
-
-                        axes[0, idx].imshow(normalize_image(x_M_original[idx].permute(1, 2, 0)))
-                        axes[0, idx].set_title(f"Original x_M {idx+1}")
-                        axes[0, idx].axis('off')
-
-                        axes[1, idx].imshow(normalize_image(x_M[idx].permute(1, 2, 0)))
-                        axes[1, idx].set_title(f"Modified x_M {idx+1}")
-                        axes[1, idx].axis('off')
-
-                        axes[2, idx].imshow(normalize_image(x_M_hat_constrained_original[idx].permute(1, 2, 0)))
-                        axes[2, idx].set_title(f"Original x_M_hat {idx+1}")
-                        axes[2, idx].axis('off')
-
-                        axes[3, idx].imshow(normalize_image(x_M_hat_constrained[idx].permute(1, 2, 0)))
-                        axes[3, idx].set_title(f"Modified x_M_hat {idx+1}")
-                        axes[3, idx].axis('off')
-
-                    plt.tight_layout()
-                    pdf.savefig(fig)
-                    plt.close(fig)
-
-        x_M = x_M.detach()
-
-        k_M = decoder(x_M)
-        k_M_hat = decoder(x_M_hat_constrained)
-
-        del x_M, x_M_hat, x_M_hat_constrained
-        torch.cuda.empty_cache()
-
-        d_k_M_hat = torch.norm(k_M_hat, dim=1) 
-        d_k_M = torch.norm(k_M, dim=1) 
-
-        del k_M, k_M_hat
-        torch.cuda.empty_cache()
-
-        loss = ((d_k_M_hat - d_k_M).max() + 1) ** 2 
-        # note here that watermarked image is trained to output 0 and original image to output 1
-        # but during attack it's relabeled reversely to train surr decoder
-        # TO-DO: this doesn't affect any result or logic, but needs to be refined (correct this code)
-
-        optimizer_M_hat.zero_grad(set_to_none=True)
-        optimizer_D.zero_grad(set_to_none=True)
-
-        loss.backward()
-
-        optimizer_M_hat.step()
-        optimizer_D.step()
-
-        loss_history.append(loss.item())
-
-        if rank == 0:
-            logging.info(
-                f"Train Iteration {i + 1}: "
-                f"loss: {loss.item():.4f}, "
-                f"d_k_M_hat.max(): {d_k_M_hat.max().item():.4f}, "
-                f"d_k_M.min(): {d_k_M.min().item():.4f}"
-            )
-
-        del loss, d_k_M_hat, d_k_M
-        torch.cuda.empty_cache()
-
-    # Save final models
-    if rank == 0:
-        checkpoint = {
-            'watermarked_model': watermarked_model.module.state_dict(),
-            'decoder': decoder.module.state_dict(),
-            'optimizer_M_hat': optimizer_M_hat.state_dict(),
-            'optimizer_D': optimizer_D.state_dict(),
-            'iteration': n_iterations - 1,
-            'loss_history': loss_history,
-        }
-        checkpoint_path = os.path.join(saving_path, f'checkpoint_final_{time_string}.pt')
-        torch.save(checkpoint, checkpoint_path)
-
-        save_finetuned_model(watermarked_model.module, saving_path, f'watermarked_model_final_{time_string}.pkl')
-        torch.save(decoder.module.state_dict(), os.path.join(saving_path, f'decoder_model_final_{time_string}.pth'))
-        logging.info(f"Final models saved at iteration {n_iterations}, time_string = {time_string}")
-
-    # Final evaluation and logging
-    if rank == 0:
-        logging.info("Training completed.")
-        
-        if run_eval:
-            watermarked_model.eval()
-            decoder.eval()
-            
-            with torch.no_grad():
-                eval_results = evaluate_model(
-                    num_images,
-                    gan_model,
-                    watermarked_model.module,
-                    decoder.module,
-                    device,
-                    plotting,
-                    latent_dim,
-                    max_delta,
-                    mask_switch,
-                    seed_key,
-                )
-            auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
-        
-            auc_str = f"{auc:.4f}" if auc is not None else "None"
-            tpr_str = f"{tpr_at_1_fpr:.4f}" if tpr_at_1_fpr is not None else "None"
-
-            logging.info(
-                f"Final evaluation after {n_iterations} iterations: "
-                f"AUC score: {auc_str}, "
-                f"tpr_at_1_fpr: {tpr_str}, "
-                f"lpips_loss: {lpips_loss:.4f}, "
-                f"fid_score: {fid_score:.4f}, "
-                f"mean_max_delta: {mean_max_delta:.4f}, "
-                f"total_decoder_params: {total_decoder_params}"
-            )
-
-    # Cleanup
-    if rank == 0:
-        logging.info("Training completed successfully.")
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${USER}-job-train-ablation-${INDEX}
+  labels:
+    eidf/user: ${USER}
+    kueue.x-k8s.io/queue-name: ${INFK8S_QUEUE_NAME}
+    kueue.x-k8s.io/priority-class: batch-workload-priority
+spec:
+  completions: 1
+  parallelism: 1
+  completionMode: Indexed
+  backoffLimit: 2147483647
+  activeDeadlineSeconds: 864000
+  template:
+    metadata:
+      labels:
+        eidf/user: ${USER}
+      annotations:
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB
+      containers:
+        - name: my-app
+          image: kaiyaoed/my_app:latest  # Ensure CUDA version matches host drivers
+          workingDir: "/workspace/kubernets"
+          env:
+            - name: TORCH_NCCL_ASYNC_ERROR_HANDLING
+              value: "1"
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_IB_DISABLE
+              value: "1"
+            - name: MAX_DELTA
+              value: "${MAX_DELTA}"
+            # Remove NCCL_SOCKET_IFNAME or set to host's primary interface
+            - name: NCCL_IB_HCA
+              value: "^mlx5"
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              echo "Running experiment with max_delta=$MAX_DELTA"
+              mkdir -p /workspace/kubernets/results
+              # Add checksum validation for the model file
+              curl -o ffhq70k-paper256-ada.pkl "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl"
+              torchrun --nproc_per_node=4 \
+                      --nnodes=1 \
+                      --node_rank=0 \
+                      --master_addr=127.0.0.1 \
+                      --master_port=12345 \
+                      main.py train \
+                      --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
+                      --batch_size=8 \
+                      --n_iterations=75000 \
+                      --num_eval_samples=10000 \
+                      --num_conv_layers=7 \
+                      --num_pool_layers=7 \
+                      --initial_channels=64 \
+                      --lr_M_hat=2e-4 \
+                      --lr_D=2e-4 \
+                      --seed_key 2024 \
+                      --max_delta=$MAX_DELTA \
+                      --saving_path=results 
+              exit_status=$?
+              echo "Python script finished with exit status $exit_status, sleeping indefinitely"
+              sleep infinity
+          resources:
+            limits:
+              nvidia.com/gpu: "4"
+              cpu: "32"
+              memory: "128Gi"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace/kubernets/results
+            - name: nfs-user
+              mountPath: /nfs-user
+            - name: dshm  # For shared memory
+              mountPath: /dev/shm
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: ${USER}-ws-${INDEX}
+        - name: nfs-user
+          nfs:
+            server: $INFK8S_NFS_SERVER_IP
+            path: /user/$USER
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi  # Adjust based on needs
