@@ -14,12 +14,6 @@ from models.stylegan2 import is_stylegan2
 from torchmetrics.image.fid import FrechetInceptionDistance
 from key.key import generate_mask_secret_key, mask_image_with_key
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
-)
 
 def evaluate_model(
     num_images: int,
