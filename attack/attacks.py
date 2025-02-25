@@ -88,7 +88,7 @@ def train_surrogate_decoder(
 
 
             # Apply mask before training decoder (only for attack type 4!)
-            if attack_type == "fixed":
+            if attack_type in ["fixed_secure"]:
                 k_mask = generate_mask_secret_key(x_M_hat.shape, 2024, device=device)
                 x_M = mask_image_with_key(x_M, k_mask)
                 x_M_hat = mask_image_with_key(x_M_hat, k_mask)
@@ -216,6 +216,7 @@ def generate_attack_images(
     return image_attack
 
 def perform_pgd_attack(
+    attack_type: str,
     surrogate_decoder: nn.Module,
     decoder: nn.Module,
     image_attack: torch.Tensor,
@@ -292,8 +293,15 @@ def perform_pgd_attack(
             # so, k_attack_batch -> 0 if attack is good, thus k_attack_score_batch -> 1 if attack is good, so the score is 1 if attack is good
             # so after the k_auth refactor of the code base, this still makes sense.
             with torch.no_grad():
-                k_attack_batch = decoder(image_attack_batch)
-
+                if attack_type in ["base_baseline"]:
+                    k_attack_batch = decoder(image_attack_batch)
+                elif attack_type in ["base_secure", "combined_secure", "fixed_secure"]:
+                    k_mask = generate_mask_secret_key(image_attack_batch.shape, 2024, device=device) 
+                    # Note that though we explicitly pass in image_attack_batch.shape, but only the channel number is needed (refer to this func), which is 3, and is always 3 across all experiments
+                    k_attack_batch = decoder(mask_image_with_key(image_attack_batch, k_mask))
+                else:
+                    logging.error("attack_type is undefined.")
+                    
             k_attack_score_batch = (
                 1 - torch.norm(k_attack_batch, dim=1)
             ).cpu().numpy()
@@ -355,7 +363,7 @@ def attack_label_based(
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if alpha_values is None:
-        alpha_values = [0.1, 0.5, 1.0, 5.0]
+        alpha_values = [1.0]
 
     logging.info("Starting attack_label_based function.")
 
@@ -389,6 +397,7 @@ def attack_label_based(
 
     # Perform PGD attack
     k_attack_scores_mean, k_attack_scores_std = perform_pgd_attack(
+        attack_type,
         surrogate_decoder, decoder, image_attack, 
         max_delta, device, num_steps, alpha_values, attack_batch_size
     )
