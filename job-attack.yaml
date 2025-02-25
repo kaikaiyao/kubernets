@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ${USER}-job-attack
+  name: ${USER}-job-attack-${JOB_SUFFIX}
   labels:
     eidf/user: ${USER}
     kueue.x-k8s.io/queue-name: ${INFK8S_QUEUE_NAME}
