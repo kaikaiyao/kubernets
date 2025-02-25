@@ -109,6 +109,7 @@ def generate_mask_secret_key(
     if 'flip_key' == "none":
         pass
     elif 'flip_key' == "1":
+        print("I'm flipping the key for 1 bit")
         binary_key = flip_key(binary_key)
 
     # Create and freeze CNN
