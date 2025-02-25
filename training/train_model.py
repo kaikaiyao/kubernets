@@ -191,8 +191,8 @@ def train_model(
                     
                     logging.info(
                         f"Eval after convergence at iteration {i + 1}: "
-                        f"AUC score: {auc:.4f if auc is not None else 'None'}, "
-                        f"tpr_at_1_fpr: {tpr_at_1_fpr:.4f if tpr_at_1_fpr is not None else 'None'}, "
+                        f"AUC score: {f"{auc:.4f}" if auc is not None else "None"}, "
+                        f"tpr_at_1_fpr: {f"{tpr_at_1_fpr:.4f}" if tpr_at_1_fpr is not None else "None"}, "
                         f"lpips_loss: {lpips_loss:.4f}, "
                         f"fid_score: {fid_score:.4f}, "
                         f"mean_max_delta: {mean_max_delta:.4f}, "
