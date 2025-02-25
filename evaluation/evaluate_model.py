@@ -53,10 +53,11 @@ def evaluate_model(
     metrics = {
         'scores': [],
         'labels': [],
+        'original_scores': [],
+        'watermarked_scores': [],
+        'random_scores': [],
         'lpips_losses': [],
         'max_deltas': [],
-        'non_watermarked_scores': [],
-        'watermarked_scores': [],
         'plot_data': []
     }
 
@@ -123,6 +124,7 @@ def process_batch(
             gan_model, watermarked_model, current_batch_size, latent_dim, device
         )
         x_M_hat = constrain_image(x_M_hat, x_M, max_delta)
+        x_rand = torch.rand_like(x_M) * 2 - 1  # Random images in [-1, 1] range
 
     # Calculate image differences
     delta_metrics = calculate_delta_metrics(x_M, x_M_hat, current_batch_size, lpips_loss)
@@ -131,7 +133,7 @@ def process_batch(
 
     # Process watermark detection
     process_watermark_detection(
-        x_M, x_M_hat, decoder, mask_switch, seed_key, device, metrics, current_batch_size
+        x_M, x_M_hat, x_rand, decoder, mask_switch, seed_key, device, metrics, current_batch_size
     )
 
     # Update FID metric
@@ -163,31 +165,36 @@ def calculate_delta_metrics(x_M, x_M_hat, batch_size, lpips_loss):
         'lpips_losses': lpips_loss(x_M_hat, x_M).squeeze().tolist()
     }
 
-def process_watermark_detection(x_M, x_M_hat, decoder, mask_switch, seed_key, device, metrics, batch_size):
-    """Process watermark detection and score calculation"""
+def process_watermark_detection(x_M, x_M_hat, x_rand, decoder, mask_switch, seed_key, device, metrics, batch_size):
+    """Process watermark detection and score calculation for original, watermarked, and random images"""
     # Apply mask if enabled
     if mask_switch:
         k_mask = generate_mask_secret_key(x_M_hat.shape, seed_key, device=device)
         x_M_mask = mask_image_with_key(x_M, k_mask)
         x_M_hat_mask = mask_image_with_key(x_M_hat, k_mask)
+        x_rand_mask = mask_image_with_key(x_rand, k_mask)
     else:
         x_M_mask, x_M_hat_mask = x_M, x_M_hat
+        x_rand_mask = x_rand
 
     # Decode watermarks
     with torch.no_grad():
         k_M = decoder(x_M_mask)
         k_M_hat = decoder(x_M_hat_mask)
+        k_rand = decoder(x_rand_mask)
 
     # Calculate similarity scores
     k_M_scores = 1 - torch.norm(k_M, dim=1)
     k_M_hat_scores = 1 - torch.norm(k_M_hat, dim=1)
+    k_rand_scores = 1 - torch.norm(k_rand, dim=1)
 
     # Store scores and labels
     for j in range(batch_size):
-        metrics['scores'].extend([k_M_scores[j].item(), k_M_hat_scores[j].item()])
-        metrics['labels'].extend([0, 1])
-        metrics['non_watermarked_scores'].append(k_M_scores[j].item())
+        metrics['scores'].extend([k_M_scores[j].item(), k_M_hat_scores[j].item(), k_rand_scores[j].item()])
+        metrics['labels'].extend([0, 1, 0])
+        metrics['original_scores'].append(k_M_scores[j].item())
         metrics['watermarked_scores'].append(k_M_hat_scores[j].item())
+        metrics['random_scores'].append(k_rand_scores[j].item())
 
 def update_fid_metric(x_M, x_M_hat, fid_metric):
     """Update FID metric with new images"""
@@ -208,7 +215,7 @@ def store_plot_data(x_M, x_M_hat, metrics, batch_size):
             "water": img_water.cpu(),
             "difference": difference_image.cpu(),
             "scores": (
-                metrics['non_watermarked_scores'][-batch_size+j],
+                metrics['original_scores'][-batch_size+j],
                 metrics['watermarked_scores'][-batch_size+j]
             )
         })
@@ -219,16 +226,19 @@ def calculate_final_metrics(metrics, fid_metric) -> dict:
     
     # Basic statistics
     score_stats = {
-        'non_watermarked_mean': np.mean(metrics['non_watermarked_scores']),
-        'non_watermarked_std': np.std(metrics['non_watermarked_scores']),
+        'original_mean': np.mean(metrics['original_scores']),
+        'original_std': np.std(metrics['original_scores']),
         'watermarked_mean': np.mean(metrics['watermarked_scores']),
-        'watermarked_std': np.std(metrics['watermarked_scores'])
+        'watermarked_std': np.std(metrics['watermarked_scores']),
+        'random_mean': np.mean(metrics['random_scores']),
+        'random_std': np.std(metrics['random_scores'])
     }
     
     logging.info(
         "Confidence score statistics:\n"
-        f"  Non-watermarked: μ={score_stats['non_watermarked_mean']:.4f} ±{score_stats['non_watermarked_std']:.4f}\n"
-        f"  Watermarked:     μ={score_stats['watermarked_mean']:.4f} ±{score_stats['watermarked_std']:.4f}"
+        f"  Original:    μ={score_stats['original_mean']:.4f} ±{score_stats['original_std']:.4f}\n"
+        f"  Watermarked: μ={score_stats['watermarked_mean']:.4f} ±{score_stats['watermarked_std']:.4f}\n"
+        f"  Random:      μ={score_stats['random_mean']:.4f} ±{score_stats['random_std']:.4f}"
     )
 
     # ROC metrics
