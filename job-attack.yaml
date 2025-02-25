@@ -63,7 +63,7 @@ spec:
                       --initial_channels_surr 64 \
                       --max_delta 0.05 \
                       --train_size 100000 \
-                      --image_attack_size 100 
+                      --image_attack_size 1000 
               exit_status=$?
               echo "Python script finished with exit status $exit_status"
               sleep infinity
