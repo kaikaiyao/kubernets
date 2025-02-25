@@ -27,6 +27,18 @@ spec:
           image: kaiyaoed/my_app:latest
           workingDir: "/workspace/kubernets"
           env:
+            - name: TORCH_NCCL_ASYNC_ERROR_HANDLING
+              value: "1"
+            - name: NCCL_SOCKET_IFNAME
+              value: "lo"
+            - name: NCCL_NSOCKS_PERTHREAD
+              value: "4"
+            - name: NCCL_SOCKET_NTHREADS
+              value: "2"
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_IB_DISABLE
+              value: "1"
             - name: MAX_DELTA
               value: "${MAX_DELTA}"
           command: ["/bin/bash", "-c"]
