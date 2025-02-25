@@ -13,5 +13,5 @@ for i in "${!DELTA_VALUES[@]}"; do
   envsubst '$USER $INDEX $STORAGE' < pvc-ablation.yml | kubectl create -f -
 
   # Create Job
-  envsubst '$USER $INFK8S_QUEUE_NAME $INFK8S_NFS_SERVER_IP $INDEX $MAX_DELTA' < job-ablation.yaml | kubectl create -f -
+  envsubst '$USER $INFK8S_QUEUE_NAME $INFK8S_NFS_SERVER_IP $INDEX $MAX_DELTA' < job-train.yaml | kubectl create -f -
 done
