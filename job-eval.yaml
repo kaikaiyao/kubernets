@@ -53,13 +53,13 @@ spec:
                       main.py eval \
                       --num_eval_samples 100 \
                       --stylegan2_url "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
-                      --watermarked_model_path '/nfs-user/data/train_ffhq_encryp_300k_delta_ablation/delta_0_05/watermarked_model_20250223004758843000.pkl' \
-                      --decoder_model_path '/nfs-user/data/train_ffhq_encryp_300k_delta_ablation/delta_0_05/decoder_model_20250223004758843000.pth' \
+                      --watermarked_model_path '/nfs-user/data/train_ffhq_encryp_300k_delta_ablation/delta_0_5/watermarked_model_20250223004630485657.pkl' \
+                      --decoder_model_path '/nfs-user/data/train_ffhq_encryp_300k_delta_ablation/delta_0_5/decoder_model_20250223004630485657.pth' \
                       --num_conv_layers 7 \
                       --num_pool_layers 7 \
                       --initial_channels 64 \
                       --seed_key 2024 \
-                      --max_delta 0.05 \
+                      --max_delta 0.5 \
                       --mask_switch True 
               exit_status=$?
               echo "Python script finished with exit status $exit_status"
