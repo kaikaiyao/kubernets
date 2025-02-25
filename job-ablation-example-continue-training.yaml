@@ -45,7 +45,6 @@ spec:
                 --lr_D=2e-4 \
                 --max_delta=$MAX_DELTA \
                 --saving_path=results \
-                --convergence_threshold=0.0000001 \
                 --mask_switch=True \
                 --resume_checkpoint=/workspace/kubernets/results/checkpoint_20250221204015484235.pt
               exit_status=$?

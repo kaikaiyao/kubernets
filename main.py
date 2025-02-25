@@ -45,7 +45,6 @@ def main():
     parser.add_argument("--lr_D", type=float, default=1e-4, help="Learning rate for the decoder")
     parser.add_argument("--max_delta", type=float, default=0.01, help="Maximum allowed change per pixel (infinite norm constraint)")
     parser.add_argument("--run_eval", type=bool, default=True, help="Run evaluation function during training")
-    parser.add_argument("--convergence_threshold", type=float, default=0.005, help="Threshold between loss diff of each 2000 epochs to determine convergence.")
     parser.add_argument("--mask_switch", type=bool, default=False, help="To apply the new masking pipeline")
     parser.add_argument("--resume_checkpoint", type=str, help="Path to a checkpoint file to resume training")
 
@@ -163,7 +162,6 @@ def main():
             args.plotting,
             args.max_delta,
             args.saving_path,
-            args.convergence_threshold,
             args.mask_switch,
             args.seed_key,
             optimizer_M_hat,

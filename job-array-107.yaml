@@ -48,7 +48,6 @@ spec:
             --lr_D 2e-4
             --max_delta $max_delta
             --saving_path results
-            --convergence_threshold 0.0000001
             --mask_switch True
         resources:
           limits:

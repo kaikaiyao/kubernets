@@ -38,7 +38,6 @@ class CryptoCNN(nn.Module):
         """
         # Generate cryptographic seed
         total_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
-        print(f"Total num of parameters of the keyed fixed CNN: {total_params}")
         seed_size = total_params * 4  # 4 bytes per float32
         rng = np.random.default_rng(seed=0)
         seed = rng.bytes(seed_size)

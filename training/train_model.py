@@ -29,7 +29,6 @@ def train_model(
     plotting,
     max_delta,
     saving_path,
-    convergence_threshold,
     mask_switch,
     seed_key,
     optimizer_M_hat,
@@ -45,14 +44,12 @@ def train_model(
         logging.info(f"time_string = {time_string}")
         logging.info("Decoder structure:\n%s", decoder.module if isinstance(decoder, DDP) else decoder)
         logging.info(f"Decoder parameters: {sum(p.numel() for p in decoder.parameters())}")
-        logging.info(f"Convergence threshold: {convergence_threshold}")
 
     gan_model.eval()
     watermarked_model.train()
     decoder.train()
 
     loss_history = initial_loss_history if initial_loss_history is not None else []
-    converged = False
 
     for i in range(start_iter, n_iterations):
         torch.cuda.empty_cache()
@@ -133,7 +130,7 @@ def train_model(
         del k_M, k_M_hat
         torch.cuda.empty_cache()
 
-        loss = ((d_k_M_hat - d_k_M).max() + 1) ** 2 # this loss will train d_k_M_hat to 0 and d_k_M to 1, which means k_M_hat to 0 and k_M to 1, labeling watermarked model as 0 (D's output is scaler, so not really "label" but put the output as close to 0).
+        loss = ((d_k_M_hat - d_k_M).max() + 1) ** 2
 
         optimizer_M_hat.zero_grad(set_to_none=True)
         optimizer_D.zero_grad(set_to_none=True)
@@ -145,7 +142,7 @@ def train_model(
 
         loss_history.append(loss.item())
 
-        if rank == 0 and i % 100 == 0:
+        if rank == 0:
             logging.info(
                 f"Train Iteration {i + 1}: "
                 f"loss: {loss.item():.4f}, "
@@ -156,112 +153,41 @@ def train_model(
         del loss, d_k_M_hat, d_k_M
         torch.cuda.empty_cache()
 
-        # Synchronize and check convergence
-        if (i + 1) % 2000 == 0 and (i + 1) >= 4000:
-            current_avg_loss = np.mean(loss_history[-2000:])
-            previous_avg_loss = np.mean(loss_history[-4000:-2000])
-            loss_diff = abs(current_avg_loss - previous_avg_loss)
-            
-            if rank == 0:
-                logging.info(f"Iter {i + 1}, loss diff: {loss_diff:.4f}")
-                
-                if loss_diff < convergence_threshold:
-                    converged = True
-                    logging.info(f"Converged at iter {i + 1}")
-                    
-                    if run_eval:
-                        watermarked_model.eval()
-                        decoder.eval()
-                        
-                        with torch.no_grad():
-                            eval_results = evaluate_model(
-                                num_images,
-                                gan_model,
-                                watermarked_model.module,
-                                decoder.module,
-                                device,
-                                plotting,
-                                latent_dim,
-                                max_delta,
-                                mask_switch,
-                                seed_key,
-                            )
-                        auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
-                    
-                    auc_str = f"{auc:.4f}" if auc is not None else "None"
-                    tpr_str = f"{tpr_at_1_fpr:.4f}" if tpr_at_1_fpr is not None else "None"
-                    logging.info(
-                        f"Eval after convergence at iteration {i + 1}: "
-                        f"AUC score: {auc_str}, "
-                        f"tpr_at_1_fpr: {tpr_str}, "
-                        f"lpips_loss: {lpips_loss:.4f}, "
-                        f"fid_score: {fid_score:.4f}, "
-                        f"mean_max_delta: {mean_max_delta:.4f}, "
-                        f"total_decoder_params: {total_decoder_params}"
-                    )
-
-                    # Save checkpoint
-                    checkpoint = {
-                        'watermarked_model': watermarked_model.module.state_dict(),
-                        'decoder': decoder.module.state_dict(),
-                        'optimizer_M_hat': optimizer_M_hat.state_dict(),
-                        'optimizer_D': optimizer_D.state_dict(),
-                        'iteration': i,
-                        'loss_history': loss_history,
-                    }
-                    checkpoint_path = os.path.join(saving_path, f'checkpoint_{time_string}.pt')
-                    torch.save(checkpoint, checkpoint_path)
-                    save_finetuned_model(watermarked_model.module, saving_path, f'watermarked_model_{time_string}.pkl')
-                    torch.save(decoder.module.state_dict(), os.path.join(saving_path, f'decoder_model_{time_string}.pth'))
-                    logging.info(f"Models saved after convergence at iteration {i + 1}, time_string = {time_string}")
-
-                    break
-
-    if not converged:
-        convergence_score = None
-        if len(loss_history) >= 4000:
-            current_avg_loss = np.mean(loss_history[-2000:])
-            previous_avg_loss = np.mean(loss_history[-4000:-2000])
-            convergence_score = abs(current_avg_loss - previous_avg_loss)
+    # Final evaluation and logging
+    if rank == 0:
+        logging.info("Training completed.")
         
-        if rank == 0:
-            logging.info(
-                f"Training completed. Convergence score: {convergence_score:.4f}" 
-                if convergence_score is not None 
-                else "Training completed. Convergence score: Not enough data to compute convergence score"
-            )
+        if run_eval:
+            watermarked_model.eval()
+            decoder.eval()
             
-            if run_eval:
-                watermarked_model.eval()
-                decoder.eval()
-                
-                with torch.no_grad():
-                    eval_results = evaluate_model(
-                        num_images,
-                        gan_model,
-                        watermarked_model.module,
-                        decoder.module,
-                        device,
-                        plotting,
-                        latent_dim,
-                        max_delta,
-                        mask_switch,
-                        seed_key,
-                    )
-                    auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
-                
-                auc_str = f"{auc:.4f}" if auc is not None else "None"
-                tpr_str = f"{tpr_at_1_fpr:.4f}" if tpr_at_1_fpr is not None else "None"
-
-                logging.info(
-                    f"Eval after training completion at iteration {n_iterations}: "
-                    f"AUC score: {auc_str}, "
-                    f"tpr_at_1_fpr: {tpr_str}, "
-                    f"lpips_loss: {lpips_loss:.4f}, "
-                    f"fid_score: {fid_score:.4f}, "
-                    f"mean_max_delta: {mean_max_delta:.4f}, "
-                    f"total_decoder_params: {total_decoder_params}"
+            with torch.no_grad():
+                eval_results = evaluate_model(
+                    num_images,
+                    gan_model,
+                    watermarked_model.module,
+                    decoder.module,
+                    device,
+                    plotting,
+                    latent_dim,
+                    max_delta,
+                    mask_switch,
+                    seed_key,
                 )
+            auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
+        
+            auc_str = f"{auc:.4f}" if auc is not None else "None"
+            tpr_str = f"{tpr_at_1_fpr:.4f}" if tpr_at_1_fpr is not None else "None"
+
+            logging.info(
+                f"Final evaluation after {n_iterations} iterations: "
+                f"AUC score: {auc_str}, "
+                f"tpr_at_1_fpr: {tpr_str}, "
+                f"lpips_loss: {lpips_loss:.4f}, "
+                f"fid_score: {fid_score:.4f}, "
+                f"mean_max_delta: {mean_max_delta:.4f}, "
+                f"total_decoder_params: {total_decoder_params}"
+            )
 
     # Save final models
     if rank == 0:
