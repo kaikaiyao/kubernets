@@ -310,7 +310,6 @@ def perform_pgd_attack(
 
         # Set the print options to ensure all elements are displayed
         np.set_printoptions(threshold=np.inf)
-        print(f"k_attack_scores_alpha: {k_attack_scores_alpha}")
 
         mean_score = np.mean(k_attack_scores_alpha)
         std_score = np.std(k_attack_scores_alpha)

@@ -304,8 +304,6 @@ def perform_pgd_attack(
             torch.cuda.empty_cache()
             gc.collect()
 
-        logging.info(f"k_attack_scores_alpha: {k_attack_scores_alpha}")
-
         mean_score = np.mean(k_attack_scores_alpha)
         std_score = np.std(k_attack_scores_alpha)
         k_attack_scores_mean.append(mean_score)
