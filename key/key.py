@@ -106,11 +106,20 @@ def generate_mask_secret_key(
     binary_key = random.getrandbits(256).to_bytes(32, 'big')
 
     # Flip the encryption key (for evaluation)
-    if 'flip_key' == "none":
+    print("I'm at A")
+    if flip_key == "none":
+        print("I'm not flipping bits")
         pass
-    elif 'flip_key' == "1":
+    elif flip_key == "1":
         print("I'm flipping the key for 1 bit")
-        binary_key = flip_key(binary_key)
+        binary_key = flip_key(binary_key, "1")
+    elif flip_key == "10":
+        print("I'm flipping the key for 10 bits")
+        binary_key = flip_key(binary_key, "10")
+    elif flip_key == "random":
+        print("I'm flipping the key for all bits")
+        binary_key = flip_key(binary_key, "random")
+    print("I'm at B")
 
     # Create and freeze CNN
     mask_generator = CryptoCNN(channels, channels, binary_key).to(device)

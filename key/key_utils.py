@@ -1,25 +1,46 @@
+import os
 import random
 import logging
 
-def flip_key(input_key: bytes) -> bytes:
-    """Flips a random bit in a 256-bit (32-byte) key."""
+def flip_key(input_key: bytes, flip_type: str) -> bytes:
+    """Flips bits in a 256-bit (32-byte) key according to the chosen flip_type.
+    
+    flip_type options:
+      "1"      - Flip exactly one random bit.
+      "10"     - Flip exactly 10 unique random bits.
+      "random" - Flip every bit with a random mask, resulting in a completely random key.
+    """
     if len(input_key) != 32:
         raise ValueError("Input key must be exactly 32 bytes long")
 
-    # Choose a random bit position (0 to 255)
-    # bit_to_flip = random.randint(0, 255)
-    bit_to_flip = 128 # set it to a fixed value first ...
-    logging.info(f"Flipping bit #{bit_to_flip}")
-
-    # Determine the byte and bit index
-    byte_index = bit_to_flip // 8
-    bit_index = bit_to_flip % 8
-
-    # Convert to a mutable bytearray
+    # Create a mutable copy of the key
     mutable_key = bytearray(input_key)
-
-    # Flip the bit using XOR
-    mutable_key[byte_index] ^= (1 << (7 - bit_index))  # Ensuring big-endian bit order
-
-    # Convert back to immutable bytes
-    return bytes(mutable_key)
+    
+    if flip_type == "1":
+        # Choose one random bit position (0 to 255)
+        bit_to_flip = random.randint(0, 255)
+        logging.info(f"Flipping bit #{bit_to_flip}")
+        byte_index = bit_to_flip // 8
+        bit_index = bit_to_flip % 8
+        mutable_key[byte_index] ^= (1 << (7 - bit_index))  # Big-endian bit order
+        return bytes(mutable_key)
+    
+    elif flip_type == "10":
+        # Choose 10 unique random bit positions (0 to 255)
+        bit_positions = random.sample(range(256), 10)
+        logging.info(f"Flipping bits at positions: {bit_positions}")
+        for bit in bit_positions:
+            byte_index = bit // 8
+            bit_index = bit % 8
+            mutable_key[byte_index] ^= (1 << (7 - bit_index))
+        return bytes(mutable_key)
+    
+    elif flip_type == "random":
+        # Generate a random 256-bit mask and XOR it with the input key.
+        random_mask = os.urandom(32)
+        logging.info("Flipping key to a completely random key using XOR with a random mask")
+        new_key = bytes(b ^ m for b, m in zip(mutable_key, random_mask))
+        return new_key
+    
+    else:
+        raise ValueError("Invalid flip_type. Choose '1', '10', or 'random'.")
