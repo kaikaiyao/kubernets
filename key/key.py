@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 from Crypto.Cipher import ChaCha20
 
+from key.key_utils import flip_key
 
 class CryptoCNN(nn.Module):
     """A convolutional neural network with cryptographic weight initialization.
@@ -85,7 +86,8 @@ class CryptoCNN(nn.Module):
 def generate_mask_secret_key(
     image_shape: Tuple[int, int, int, int],
     seed: int,
-    device: str = 'cpu'
+    device: str = 'cpu',
+    flip_key: str = 'none',
 ) -> nn.Module:
     """Generates a frozen CNN-based mask generator with cryptographic initialization.
     
@@ -102,6 +104,12 @@ def generate_mask_secret_key(
     # Generate 256-bit key from seed (for experiment reproduction use)
     random.seed(seed)
     binary_key = random.getrandbits(256).to_bytes(32, 'big')
+
+    # Flip the encryption key (for evaluation)
+    if 'flip_key' == "none":
+        pass
+    elif 'flip_key' == "1":
+        binary_key = flip_key(binary_key)
 
     # Create and freeze CNN
     mask_generator = CryptoCNN(channels, channels, binary_key).to(device)
