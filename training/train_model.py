@@ -193,6 +193,7 @@ def train_model(
                     max_delta,
                     mask_switch_on,
                     seed_key,
+                    flip_key_type="none",
                 )
             auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
         
