@@ -334,25 +334,28 @@ def attack_label_based(
     attack_batch_size: int = 16,
     num_steps: int = 100,
     alpha_values: list = None,
+    train_surrogate: bool = True,  # New parameter
 ) -> tuple:
     """
     Performs a label-based attack on a watermarked GAN model.
 
     Args:
+        attack_type (str): Type of attack to perform.
         gan_model (nn.Module): Original GAN model.
         watermarked_model (nn.Module): Watermarked GAN model.
         max_delta (float): Maximum perturbation.
         decoder (nn.Module): Decoder for scoring.
-        surrogate_decoder (nn.Module): Surrogate decoder to train.
+        surrogate_decoder (nn.Module): Surrogate decoder to train or use.
         latent_dim (int): Latent space dimension.
         device (torch.device): Device for computations.
         train_size (int): Training samples per class.
         image_attack_size (int): Number of attack images.
         batch_size (int, optional): Batch size for training. Defaults to 16.
-        epochs (int, optional): Training epochs. Defaults to 5.
+        epochs (int, optional): Training epochs. Defaults to 1.
         attack_batch_size (int, optional): Batch size for attack. Defaults to 16.
-        num_steps (int, optional): PGD steps. Defaults to 50.
-        alpha_values (list, optional): Step sizes for PGD. Defaults to [1.0].
+        num_steps (int, optional): PGD steps. Defaults to 100.
+        alpha_values (list, optional): Step sizes for PGD. Defaults to None.
+        train_surrogate (bool, optional): Whether to train the surrogate decoder. Defaults to True.
 
     Returns:
         tuple: Mean and standard deviation of attack scores.
@@ -376,20 +379,23 @@ def attack_label_based(
     )
     logging.info("Initialized image_attack with random images.")
 
-    # Train surrogate decoder
-    train_surrogate_decoder(
-        attack_type=attack_type,
-        surrogate_decoder=surrogate_decoder,
-        gan_model=gan_model,
-        watermarked_model=watermarked_model,
-        max_delta=max_delta,
-        latent_dim=latent_dim,
-        device=device,
-        train_size=train_size,
-        epochs=epochs,
-        batch_size=batch_size
-    )
-    logging.info("Training of surrogate decoder completed.")
+    # Train surrogate decoder only if train_surrogate is True
+    if train_surrogate:
+        train_surrogate_decoder(
+            attack_type=attack_type,
+            surrogate_decoder=surrogate_decoder,
+            gan_model=gan_model,
+            watermarked_model=watermarked_model,
+            max_delta=max_delta,
+            latent_dim=latent_dim,
+            device=device,
+            train_size=train_size,
+            epochs=epochs,
+            batch_size=batch_size
+        )
+        logging.info("Training of surrogate decoder completed.")
+    else:
+        logging.info("Using pre-trained surrogate decoder.")
 
     # Perform PGD attack
     k_attack_scores_mean, k_attack_scores_std = perform_pgd_attack(

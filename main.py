@@ -62,6 +62,7 @@ def main():
     parser.add_argument("--surrogate_decoder_type", type=str, default="resnet152", help="Type of surrogate decoder to use for bb binary attack")
     parser.add_argument("--train_size", type=int, default=100000, help="training set size for training surrogate decoder")
     parser.add_argument("--image_attack_size", type=int, default=10000, help="size of attack image set")
+    parser.add_argument("--surrogate_decoder_path", type=str, default=None, help="Path to pre-trained surrogate decoder model")
 
     # DDP arguments
     parser.add_argument("--local_rank", type=int, default=0, help="Local rank for distributed training")
@@ -261,7 +262,7 @@ def main():
                 decoder_initial_channels=args.initial_channels_surr,
                 cnn_instance=None,
                 cnn_mode="fresh",
-            )
+            ).to(device)
         elif args.attack_type in ["fixed_secure"]:
             from key.key import generate_mask_secret_key
             mask_cnn = generate_mask_secret_key(
@@ -276,19 +277,30 @@ def main():
                 decoder_initial_channels=args.initial_channels_surr,
                 cnn_instance=mask_cnn,
                 cnn_mode="fixed",
-            )
+            ).to(device)
+
+        # Check if a pre-trained surrogate decoder path is provided
+        if args.surrogate_decoder_path is not None:
+            logging.info(f"Loading pre-trained surrogate decoder from {args.surrogate_decoder_path}")
+            state_dict = torch.load(args.surrogate_decoder_path, map_location=device)
+            surrogate_decoder.load_state_dict(state_dict)
+            train_surrogate = False
+        else:
+            logging.info("Training surrogate decoder from scratch.")
+            train_surrogate = True
 
         attack_label_based(
             args.attack_type,
             gan_model, 
             watermarked_model,
             args.max_delta,
-            decoder, # this is for the purpose of verification (it is the "real" pretrained decoder, used to verify if fake images' conf score - NOTE: but note that for secure model, you need to pass the filter first and then this)
+            decoder,
             surrogate_decoder,
             latent_dim, 
             device, 
-            args.train_size, # training size for training surrogate decoder, usually being large to enable improve attach perf (?)
-            args.image_attack_size # how many images to do attack on (for evaluating the attack and get statistics, usually set to like 10000)
+            args.train_size,
+            args.image_attack_size,
+            train_surrogate=train_surrogate  # Pass the flag to control training
         )
 
 
