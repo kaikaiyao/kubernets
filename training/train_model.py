@@ -131,9 +131,6 @@ def train_model(
         torch.cuda.empty_cache()
 
         loss = ((d_k_M - d_k_M_hat).max() + 1) ** 2 
-        # note here that watermarked image is trained to output 0 and original image to output 1
-        # but during attack it's relabeled reversely to train surr decoder
-        # TO-DO: this doesn't affect any result or logic, but needs to be refined (correct this code) (i modified to swap to "d_k_M - d_k_M_hat")
 
         optimizer_M_hat.zero_grad(set_to_none=True)
         optimizer_D.zero_grad(set_to_none=True)
@@ -149,8 +146,8 @@ def train_model(
             logging.info(
                 f"Train Iteration {i + 1}: "
                 f"loss: {loss.item():.4f}, "
-                f"d_k_M_hat.max(): {d_k_M_hat.max().item():.4f}, "
-                f"d_k_M.min(): {d_k_M.min().item():.4f}"
+                f"d_k_M_hat.min(): {d_k_M_hat.min().item():.4f}, "
+                f"d_k_M.max(): {d_k_M.max().item():.4f}"
             )
 
         del loss, d_k_M_hat, d_k_M
