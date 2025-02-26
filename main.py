@@ -228,7 +228,24 @@ def main():
     elif args.mode == "attack":
         local_path = args.stylegan2_url.split('/')[-1]
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Check if a pre-trained surrogate decoder path is provided
+        if args.surrogate_decoder_path is not None:
+            train_surrogate = False
+        else:
+            train_surrogate = True
+
+        # Initialize device and DDP if training surrogate decoder
+        if train_surrogate:
+            dist.init_process_group(backend='nccl', init_method='env://')
+            args.local_rank = int(os.environ['LOCAL_RANK'])
+            torch.cuda.set_device(args.local_rank)
+            device = torch.device('cuda', args.local_rank)
+            args.world_size = dist.get_world_size()
+            args.rank = dist.get_rank()
+        else:
+            device = initialize_cuda()
+            args.rank = 0
+
         if args.self_trained:
             latent_dim = args.self_trained_latent_dim
             gan_model = load_gan_model(args.self_trained_model_path, latent_dim).to(device)
@@ -256,7 +273,7 @@ def main():
             ).to(device)
         elif args.attack_type in ["combined_secure"]:
             surrogate_decoder = CombinedModel(
-                input_channels=3, 
+                input_channels=3,
                 decoder_total_conv_layers=args.num_conv_layers_surr,
                 decoder_total_pool_layers=args.num_pool_layers_surr,
                 decoder_initial_channels=args.initial_channels_surr,
@@ -268,10 +285,10 @@ def main():
             mask_cnn = generate_mask_secret_key(
                 image_shape=(1, 3, 256, 256),
                 seed=2024,
-                device='cuda',
+                device=device,
             )
             surrogate_decoder = CombinedModel(
-                input_channels=3, 
+                input_channels=3,
                 decoder_total_conv_layers=args.num_conv_layers_surr,
                 decoder_total_pool_layers=args.num_pool_layers_surr,
                 decoder_initial_channels=args.initial_channels_surr,
@@ -279,28 +296,45 @@ def main():
                 cnn_mode="fixed",
             ).to(device)
 
+        # Wrap surrogate_decoder with DDP if training
+        if train_surrogate:
+            surrogate_decoder = torch.nn.parallel.DistributedDataParallel(
+                surrogate_decoder,
+                device_ids=[args.local_rank],
+                output_device=args.local_rank
+            )
+
         # Check if a pre-trained surrogate decoder path is provided
-        if args.surrogate_decoder_path is not None:
+        if train_surrogate:
+            logging.info("Training surrogate decoder from scratch.")
+        else:
             logging.info(f"Loading pre-trained surrogate decoder from {args.surrogate_decoder_path}")
             state_dict = torch.load(args.surrogate_decoder_path, map_location=device)
-            surrogate_decoder.load_state_dict(state_dict)
-            train_surrogate = False
-        else:
-            logging.info("Training surrogate decoder from scratch.")
-            train_surrogate = True
+            # If DDP is active, load into the module
+            if train_surrogate:
+                surrogate_decoder.module.load_state_dict(state_dict)
+            else:
+                surrogate_decoder.load_state_dict(state_dict)
 
         attack_label_based(
             args.attack_type,
-            gan_model, 
+            gan_model,
             watermarked_model,
             args.max_delta,
             decoder,
             surrogate_decoder,
-            latent_dim, 
-            device, 
+            latent_dim,
+            device,
             args.train_size,
             args.image_attack_size,
-            train_surrogate=train_surrogate  # Pass the flag to control training
+            batch_size=args.batch_size,
+            epochs=1,  # Assuming default from parser if not specified
+            attack_batch_size=16,  # Assuming default from parser if not specified
+            num_steps=100,  # Assuming default from parser if not specified
+            alpha_values=None,  # Will use default in attack_label_based
+            train_surrogate=train_surrogate,
+            rank=args.rank,
+            world_size=args.world_size if train_surrogate else 1
         )
 
 

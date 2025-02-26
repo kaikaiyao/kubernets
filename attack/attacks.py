@@ -9,6 +9,7 @@ from models.stylegan2 import is_stylegan2
 from utils.image_utils import constrain_image
 from utils.file_utils import generate_time_based_string
 from key.key import generate_mask_secret_key, mask_image_with_key
+import torch.distributed as dist
 
 def train_surrogate_decoder(
     attack_type: str,
@@ -19,14 +20,16 @@ def train_surrogate_decoder(
     latent_dim: int,
     device: torch.device,
     train_size: int,
-    epochs: int = 5, # epoch is meaningless here, consider removing
+    epochs: int = 5,
     batch_size: int = 16,
+    rank: int = 0,
+    world_size: int = 1,
 ) -> None:
     """
-    Train the surrogate decoder by generating batches on-the-fly on the GPU.
+    Train the surrogate decoder by generating batches on-the-fly on the GPU using DDP.
 
     Args:
-        surrogate_decoder (nn.Module): The surrogate decoder model to train.
+        surrogate_decoder (nn.Module): The surrogate decoder model to train (possibly DDP-wrapped).
         gan_model (nn.Module): The original GAN model for generating images.
         watermarked_model (nn.Module): The watermarked GAN model.
         max_delta (float): Maximum perturbation allowed for watermarked images.
@@ -34,10 +37,16 @@ def train_surrogate_decoder(
         device (torch.device): Device to perform computations on (e.g., 'cuda').
         train_size (int): Number of training samples (per class).
         epochs (int, optional): Number of training epochs. Defaults to 5.
-        batch_size (int, optional): Batch size for training. Defaults to 4.
+        batch_size (int, optional): Batch size for training per GPU. Defaults to 16.
+        rank (int, optional): Rank of the current process in DDP. Defaults to 0.
+        world_size (int, optional): Total number of processes in DDP. Defaults to 1.
     """
     time_string = generate_time_based_string()
-    logging.info(f"time_string = {time_string}")
+    if rank == 0:
+        logging.info(f"time_string = {time_string}")
+
+    # Set random seed based on rank for different data generation across GPUs
+    torch.manual_seed(2024 + rank)
 
     # Move models to device and set to appropriate modes
     surrogate_decoder.train()
@@ -56,7 +65,7 @@ def train_surrogate_decoder(
     # Check if GAN model is StyleGAN2
     is_stylegan2_model = is_stylegan2(gan_model)
 
-    # Calculate number of batches (ceiling division)
+    # Calculate number of batches (ceiling division) per GPU
     num_batches = (train_size * 2 + batch_size - 1) // batch_size
 
     for epoch in range(epochs):
@@ -85,7 +94,6 @@ def train_surrogate_decoder(
 
                 # Constrain the watermarked images
                 x_M_hat = constrain_image(x_M_hat, x_M, max_delta)
-                
 
             # Create labels: 0 for x_M (original), 1 for x_M_hat (watermarked)
             labels = torch.cat([
@@ -130,34 +138,53 @@ def train_surrogate_decoder(
             epoch_correct += correct
             epoch_total += total
 
-            logging.info(
-                f"Epoch {epoch + 1}/{epochs}, "
-                f"Batch {batch_idx + 1}/{num_batches}, "
-                f"Loss: {loss.item():.4f}, "
-                f"Accuracy: {batch_accuracy:.4f}"
-            )
+            if rank == 0:
+                logging.info(
+                    f"Epoch {epoch + 1}/{epochs}, "
+                    f"Batch {batch_idx + 1}/{num_batches}, "
+                    f"Loss: {loss.item():.4f}, "
+                    f"Accuracy: {batch_accuracy:.4f}"
+                )
 
             # Free up GPU memory
             del z, x_M, x_M_hat, images, labels, outputs, loss, predicted
             torch.cuda.empty_cache()
             gc.collect()
 
-        # Log epoch summary
-        avg_loss = epoch_loss / num_batches
-        avg_accuracy = epoch_correct / epoch_total
-        logging.info(
-            f"Epoch {epoch + 1}/{epochs} Completed. "
-            f"Average Loss: {avg_loss:.4f}, "
-            f"Average Accuracy: {avg_accuracy:.4f}"
-        )
+        # Compute global epoch statistics if using DDP
+        if world_size > 1:
+            # Aggregate local averages across GPUs
+            local_avg_loss = epoch_loss / num_batches
+            local_avg_loss_tensor = torch.tensor(local_avg_loss, device=device)
+            dist.all_reduce(local_avg_loss_tensor, op=dist.ReduceOp.SUM)
+            global_avg_loss = local_avg_loss_tensor.item() / world_size
+
+            local_accuracy = epoch_correct / epoch_total if epoch_total > 0 else 0
+            local_accuracy_tensor = torch.tensor(local_accuracy, device=device)
+            dist.all_reduce(local_accuracy_tensor, op=dist.ReduceOp.SUM)
+            global_accuracy = local_accuracy_tensor.item() / world_size
+        else:
+            global_avg_loss = epoch_loss / num_batches
+            global_accuracy = epoch_correct / epoch_total if epoch_total > 0 else 0
+
+        if rank == 0:
+            logging.info(
+                f"Epoch {epoch + 1}/{epochs} Completed. "
+                f"Average Loss: {global_avg_loss:.4f}, "
+                f"Average Accuracy: {global_accuracy:.4f}"
+            )
 
         torch.cuda.empty_cache()
         gc.collect()
 
-    # Save the trained model
-    model_filename = f"surrogate_decoder_{time_string}.pt"
-    torch.save(surrogate_decoder.state_dict(), model_filename)
-    logging.info(f"Surrogate Decoder model saved as {model_filename}")
+    # Save the trained model only from rank 0
+    if rank == 0:
+        model_filename = f"surrogate_decoder_{time_string}.pt"
+        if world_size > 1:
+            torch.save(surrogate_decoder.module.state_dict(), model_filename)
+        else:
+            torch.save(surrogate_decoder.state_dict(), model_filename)
+        logging.info(f"Surrogate Decoder model saved as {model_filename}")
 
 def generate_attack_images(
     gan_model: nn.Module,
@@ -334,7 +361,9 @@ def attack_label_based(
     attack_batch_size: int = 16,
     num_steps: int = 100,
     alpha_values: list = None,
-    train_surrogate: bool = True,  # New parameter
+    train_surrogate: bool = True,
+    rank: int = 0,
+    world_size: int = 1,
 ) -> tuple:
     """
     Performs a label-based attack on a watermarked GAN model.
@@ -379,7 +408,7 @@ def attack_label_based(
     )
     logging.info("Initialized image_attack with random images.")
 
-    # Train surrogate decoder only if train_surrogate is True
+# Train surrogate decoder only if train_surrogate is True
     if train_surrogate:
         train_surrogate_decoder(
             attack_type=attack_type,
@@ -391,11 +420,15 @@ def attack_label_based(
             device=device,
             train_size=train_size,
             epochs=epochs,
-            batch_size=batch_size
+            batch_size=batch_size,
+            rank=rank,
+            world_size=world_size,
         )
-        logging.info("Training of surrogate decoder completed.")
+        if rank == 0:
+            logging.info("Training of surrogate decoder completed.")
     else:
-        logging.info("Using pre-trained surrogate decoder.")
+        if rank == 0:
+            logging.info("Using pre-trained surrogate decoder.")
 
     # Perform PGD attack
     k_attack_scores_mean, k_attack_scores_std = perform_pgd_attack(
