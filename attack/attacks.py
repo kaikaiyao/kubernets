@@ -198,7 +198,7 @@ def generate_attack_images(
             # image_attack_batches.append(torch.rand_like(x_M).cpu()) # 1. use random images
             image_attack_batches.append(x_M.cpu())  # 2. use GAN images directly
 
-            del z, x_M, image_attack_batch
+            del z, x_M
             torch.cuda.empty_cache()
             gc.collect()
 
