@@ -331,7 +331,7 @@ def attack_label_based(
     batch_size: int = 16,
     epochs: int = 1,
     attack_batch_size: int = 16,
-    num_steps: int = 100,
+    num_steps: int = 20,
     alpha_values: list = None,
 ) -> tuple:
     """
