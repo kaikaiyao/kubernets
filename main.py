@@ -45,7 +45,9 @@ def main():
     parser.add_argument("--lr_D", type=float, default=1e-4, help="Learning rate for the decoder")
     parser.add_argument("--max_delta", type=float, default=0.01, help="Maximum allowed change per pixel (infinite norm constraint)")
     parser.add_argument("--run_eval", type=bool, default=True, help="Run evaluation function during training")
-    parser.add_argument("--mask_switch", type=bool, default=False, help="To apply the new masking pipeline")
+    parser.add_argument("--mask_switch_on", action="store_true", help="Enable the new masking pipeline")
+    parser.set_defaults(mask_switch_on=False)
+    parser.add_argument("--mask_switch_off", dest="mask_switch_on", action="store_false", help="Disable the new masking pipeline")
     parser.add_argument("--resume_checkpoint", type=str, help="Path to a checkpoint file to resume training")
 
     # Evaluation arguments
@@ -163,7 +165,7 @@ def main():
             args.plotting,
             args.max_delta,
             args.saving_path,
-            args.mask_switch,
+            args.mask_switch_on,
             args.seed_key,
             optimizer_M_hat,
             optimizer_D,
@@ -208,7 +210,7 @@ def main():
             args.plotting,
             latent_dim,
             args.max_delta,
-            args.mask_switch,
+            args.mask_switch_on,
             args.seed_key,
             args.flip_key_type,
         )

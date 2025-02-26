@@ -56,7 +56,7 @@ spec:
                 --lr_D=2e-4 \
                 --max_delta=$MAX_DELTA \
                 --saving_path=results/single-run \
-                --mask_switch=True
+                --mask_switch_on
               
               # Capture the exit status of the Python script
               exit_status=$?

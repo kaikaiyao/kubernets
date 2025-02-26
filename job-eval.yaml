@@ -60,7 +60,7 @@ spec:
                       --initial_channels 64 \
                       --seed_key 2024 \
                       --max_delta 0.05 \
-                      --mask_switch False
+                      --mask_switch_off
               exit_status=$?
               echo "Python script finished with exit status $exit_status"
               sleep infinity

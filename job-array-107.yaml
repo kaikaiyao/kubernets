@@ -48,7 +48,7 @@ spec:
             --lr_D 2e-4
             --max_delta $max_delta
             --saving_path results
-            --mask_switch True
+            --mask_switch_on
         resources:
           limits:
             nvidia.com/gpu: "1"

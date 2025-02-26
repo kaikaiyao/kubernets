@@ -51,7 +51,7 @@ spec:
                 --lr_D=2e-4 \
                 --max_delta=$max_delta \
                 --saving_path=results/$JOB_COMPLETION_INDEX \
-                --mask_switch=True
+                --mask_switch_on
               # Capture the exit status of the Python script
               exit_status=$?
               echo "Python script finished with exit status $exit_status, sleeping indefinitely"

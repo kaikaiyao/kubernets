@@ -45,7 +45,7 @@ spec:
                 --lr_D=2e-4 \
                 --max_delta=$MAX_DELTA \
                 --saving_path=results \
-                --mask_switch=True \
+                --mask_switch_on \
                 --resume_checkpoint=/workspace/kubernets/results/checkpoint_20250221204015484235.pt
               exit_status=$?
               echo "Python script finished with exit status $exit_status, sleeping indefinitely"

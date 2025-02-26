@@ -29,7 +29,7 @@ def train_model(
     plotting,
     max_delta,
     saving_path,
-    mask_switch,
+    mask_switch_on,
     seed_key,
     optimizer_M_hat,
     optimizer_D,
@@ -72,7 +72,7 @@ def train_model(
         
         x_M_hat_constrained = constrain_image(x_M_hat, x_M, max_delta)
 
-        if mask_switch:
+        if mask_switch_on:
             if i == 0 or start_iter != 0:
                 k_mask = generate_mask_secret_key(x_M_hat_constrained.shape, seed_key, device=device)
 
@@ -191,7 +191,7 @@ def train_model(
                     plotting,
                     latent_dim,
                     max_delta,
-                    mask_switch,
+                    mask_switch_on,
                     seed_key,
                 )
             auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results

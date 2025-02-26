@@ -62,7 +62,7 @@ spec:
                       --lr_D=2e-4 \
                       --max_delta=0.2 \
                       --saving_path=results \
-                      --mask_switch=True
+                      --mask_switch_on
               exit_status=$?
               echo "Python script finished with exit status $exit_status"
               sleep infinity
