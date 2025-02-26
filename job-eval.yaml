@@ -53,8 +53,8 @@ spec:
                       main.py eval \
                       --num_eval_samples 1000 \
                       --stylegan2_url "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
-                      --watermarked_model_path '/nfs/user/s2470447-infk8s/data/baseline/watermarked_model_final_20250226232519956769.pkl' \
-                      --decoder_model_path '/nfs/user/s2470447-infk8s/data/baseline/decoder_model_final_20250226232519956769.pth' \
+                      --watermarked_model_path '/nfs-user/data/baseline/watermarked_model_final_20250226232519956769.pkl' \
+                      --decoder_model_path '/nfs-user/data/baseline/decoder_model_final_20250226232519956769.pth' \
                       --num_conv_layers 7 \
                       --num_pool_layers 7 \
                       --initial_channels 64 \
