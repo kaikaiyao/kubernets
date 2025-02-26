@@ -194,8 +194,9 @@ def generate_attack_images(
             else:
                 z = torch.randn(current_batch_size, latent_dim, 1, 1, device=device)
                 x_M = gan_model(z)
-            image_attack_batch = torch.rand_like(x_M)
-            image_attack_batches.append(image_attack_batch.cpu())
+
+            # image_attack_batches.append(torch.rand_like(x_M).cpu()) # 1. use random images
+            image_attack_batches.append(x_M.cpu())  # 2. use GAN images directly
 
             del z, x_M, image_attack_batch
             torch.cuda.empty_cache()
@@ -331,7 +332,7 @@ def attack_label_based(
     batch_size: int = 16,
     epochs: int = 1,
     attack_batch_size: int = 16,
-    num_steps: int = 20,
+    num_steps: int = 100,
     alpha_values: list = None,
 ) -> tuple:
     """
@@ -358,7 +359,7 @@ def attack_label_based(
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if alpha_values is None:
-        alpha_values = [1.0, 0.5, 2.0, 0.2]
+        alpha_values = [1.0, 0.5, 0.1, 0.01]
 
     logging.info("Starting attack_label_based function.")
 
