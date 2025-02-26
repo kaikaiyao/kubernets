@@ -51,7 +51,7 @@ spec:
                       --master_addr=127.0.0.1 \
                       --master_port=12345 \
                       main.py attack \
-                      --attack_type "secure_baseline" \
+                      --attack_type "base_baseline" \
                       --stylegan2_url "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
                       --watermarked_model_path '/nfs-user/data/train_ffhq_encryp_300k_delta_ablation/delta_0_05/watermarked_model_20250223004758843000.pkl' \
                       --decoder_model_path '/nfs-user/data/train_ffhq_encryp_300k_delta_ablation/delta_0_05/decoder_model_20250223004758843000.pth' \
