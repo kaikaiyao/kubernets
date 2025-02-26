@@ -406,7 +406,7 @@ def attack_label_based(
     image_attack = generate_attack_images(
         gan_model, image_attack_size, latent_dim, device, batch_size=100
     )
-    logging.info("Initialized image_attack with random images.")
+    logging.info("Initialized image_attack.")
 
     # Train surrogate decoder only if train_surrogate is True
     if train_surrogate:
