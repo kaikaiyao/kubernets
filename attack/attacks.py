@@ -408,7 +408,7 @@ def attack_label_based(
     )
     logging.info("Initialized image_attack with random images.")
 
-# Train surrogate decoder only if train_surrogate is True
+    # Train surrogate decoder only if train_surrogate is True
     if train_surrogate:
         train_surrogate_decoder(
             attack_type=attack_type,
@@ -431,11 +431,12 @@ def attack_label_based(
             logging.info("Using pre-trained surrogate decoder.")
 
     # Perform PGD attack
-    k_attack_scores_mean, k_attack_scores_std = perform_pgd_attack(
-        attack_type,
-        surrogate_decoder, decoder, image_attack, 
-        max_delta, device, num_steps, alpha_values, attack_batch_size
-    )
-    logging.info("PGD attack for different alpha values completed.")
+    if rank == 0:
+        k_attack_scores_mean, k_attack_scores_std = perform_pgd_attack(
+            attack_type,
+            surrogate_decoder, decoder, image_attack, 
+            max_delta, device, num_steps, alpha_values, attack_batch_size
+        )
+        logging.info("PGD attack for different alpha values completed.")
 
-    return k_attack_scores_mean, k_attack_scores_std
+        return k_attack_scores_mean, k_attack_scores_std
