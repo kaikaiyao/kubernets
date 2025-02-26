@@ -325,7 +325,7 @@ def main():
             surrogate_decoder,
             latent_dim,
             device,
-            args.train_size,
+            args.train_size, # note: here, it's per GPU (per DDP's enabling)
             args.image_attack_size,
             batch_size=16, # BS for training the surrogate decoder
             epochs=1,  # Assuming default from parser if not specified
