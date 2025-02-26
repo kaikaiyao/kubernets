@@ -404,7 +404,7 @@ def attack_label_based(
 
     # Generate attack images
     image_attack = generate_attack_images(
-        gan_model, image_attack_size, latent_dim, device, batch_size=10
+        gan_model, image_attack_size, latent_dim, device, batch_size=100
     )
     logging.info("Initialized image_attack with random images.")
 
