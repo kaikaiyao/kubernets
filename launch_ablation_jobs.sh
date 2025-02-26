@@ -1,5 +1,4 @@
 #!/bin/bash
-set -xe 
 
 export STORAGE="25Gi"  # Export STORAGE
 DELTA_VALUES=("2.0" "1.0" "0.5" "0.2" "0.1" "0.05" "0.02" "0.01")
