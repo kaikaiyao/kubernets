@@ -305,15 +305,6 @@ def perform_pgd_attack(
                 torch.cuda.empty_cache()
                 gc.collect()
 
-            # Important Note: 
-            # Here, the decoder is still based on the original key=[0] 
-            # so, after the attack is finished, you get image_attack_batch, 
-            # decoder[image_attack_batch] is still supposed to output 0 (if attack's successful), because the original key(2024) is [0]
-            # despite the fact the surrogate decoder trains attacked image to 1 
-            # (surrogate decoder's labeling as you can see in above function, labels the watermarked image (attack image goal) to 1) 
-            # so, k_attack_batch -> 0 if attack is good, thus k_attack_score_batch -> 1 if attack is good, so the score is 1 if attack is good
-            # so after the k_auth refactor of the code base, this still makes sense.
-
             # mimic the verification API
             with torch.no_grad():
                 if attack_type in ["base_baseline"]:
@@ -325,9 +316,7 @@ def perform_pgd_attack(
                 else:
                     logging.error("attack_type is undefined.")
                     
-            k_attack_score_batch = (
-                1 - torch.norm(k_attack_batch, dim=1)
-            ).cpu().numpy()
+            k_attack_score_batch = (torch.norm(k_attack_batch, dim=1)).cpu().numpy() # if attack perform well -> 1, otherwise -> 0
             k_attack_scores_alpha.extend(k_attack_score_batch)
             logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
 

@@ -187,9 +187,9 @@ def process_watermark_detection(x_M, x_M_hat, x_rand, decoder, mask_switch_on, s
         k_rand = decoder(x_rand_mask)
 
     # Calculate similarity scores
-    k_M_scores = 1 - torch.norm(k_M, dim=1)
-    k_M_hat_scores = 1 - torch.norm(k_M_hat, dim=1)
-    k_rand_scores = 1 - torch.norm(k_rand, dim=1)
+    k_M_scores = torch.norm(k_M, dim=1)
+    k_M_hat_scores = torch.norm(k_M_hat, dim=1)
+    k_rand_scores = torch.norm(k_rand, dim=1)
 
     # Store scores and labels
     for j in range(batch_size):
