@@ -45,7 +45,7 @@ spec:
               echo "Running experiment"
               mkdir -p /workspace/kubernets/results
               curl -o ffhq70k-paper256-ada.pkl "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl"
-              torchrun --nproc_per_node=4 \
+              torchrun --nproc_per_node=1 \
                       --nnodes=1 \
                       --node_rank=0 \
                       --master_addr=127.0.0.1 \
@@ -62,6 +62,7 @@ spec:
                       --num_pool_layers_surr 7 \
                       --initial_channels_surr 64 \
                       --max_delta 0.05 \
+                      --surrogate_decoder_path '/nfs-user/data/train_ffhq_encryp_300k_delta_ablation/delta_0_05/decoder_model_20250223004758843000.pth' \
                       --train_size 125000 \
                       --image_attack_size 1000 
               exit_status=$?
@@ -69,9 +70,9 @@ spec:
               sleep infinity
           resources:
             limits:
-              nvidia.com/gpu: "4"
-              cpu: "64"
-              memory: "256Gi"
+              nvidia.com/gpu: "1"
+              cpu: "8"
+              memory: "64Gi"
           volumeMounts:
             - name: nfs-user
               mountPath: /nfs-user
