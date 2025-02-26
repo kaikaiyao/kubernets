@@ -327,7 +327,7 @@ def main():
             device,
             args.train_size,
             args.image_attack_size,
-            batch_size=args.batch_size,
+            batch_size=16, # BS for training the surrogate decoder
             epochs=1,  # Assuming default from parser if not specified
             attack_batch_size=16,  # Assuming default from parser if not specified
             num_steps=100,  # Assuming default from parser if not specified
