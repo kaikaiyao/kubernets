@@ -168,7 +168,7 @@ envsubst '$USER $INFK8S_QUEUE_NAME $INFK8S_NFS_SERVER_IP' < job-array.yaml | kub
 
 - **To batch-delete jobs and pvcs for ablation study**
   ```bash
-  kubectl delete job s2470447-infk8s-job-ablation-{0..7} --force --grace-period=0
+  kubectl delete job s2470447-infk8s-job-train-ablation-{0..7} --force --grace-period=0
   kubectl delete pvc s2470447-infk8s-ws-{0..7} --force --grace-period=0
   ```
 
