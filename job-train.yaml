@@ -78,7 +78,7 @@ spec:
                       --lr_D=2e-4 \
                       --seed_key=2024 \
                       --max_delta=$MAX_DELTA \
-                      --resume_checkpoint "checkpoint_final_20250227103121984723.pt" \
+                      --resume_checkpoint "/nfs-user/data/encryption/checkpoint_final_20250227103121984723.pt" \
                       --mask_switch_on \
                       --saving_path=results
               exit_status=$?
