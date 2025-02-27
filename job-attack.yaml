@@ -64,7 +64,7 @@ spec:
                       --max_delta 0.05 \
                       --train_size 300000 \
                       --image_attack_size 10 \
-                      --num_steps_pgd 100 \
+                      --num_steps_pgd 500 \
                       --surrogate_decoder_model_path '/nfs-user/data/baseline/surrogate_decoder_2400ksamples.pt' \
                       --alpha_values_pgd "0.001,0.005,0.01,0.05"
               exit_status=$?
