@@ -16,12 +16,30 @@ spec:
     metadata:
       labels:
         eidf/user: ${USER}
-      annotations:
-        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB
     spec:
       restartPolicy: OnFailure
-      nodeSelector:
-        nvidia.com/gpu.product: NVIDIA-A100-SXM4-40GB
+      # Replace nodeSelector with affinity to allow multiple GPU types.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nvidia.com/gpu.product
+                    operator: In
+                    values:
+                      - NVIDIA-A100-SXM4-80GB
+                      - NVIDIA-A100-SXM4-40GB
+                      - NVIDIA-H100-80GB-HBM3
+      # Add tolerations to allow scheduling on nodes with specific taints.
+      tolerations:
+        - key: "eidf098"
+          operator: "Equal"
+          value: "True"
+          effect: "NoSchedule"
+        - key: "eidf107"
+          operator: "Equal"
+          value: "True"
+          effect: "NoSchedule"
       containers:
         - name: my-app
           image: kaiyaoed/my_app:latest  # Ensure CUDA version matches host drivers
@@ -35,7 +53,6 @@ spec:
               value: "1"
             - name: MAX_DELTA
               value: "${MAX_DELTA}"
-            # Remove NCCL_SOCKET_IFNAME or set to host's primary interface
             - name: NCCL_IB_HCA
               value: "^mlx5"
           command: ["/bin/bash", "-c"]
