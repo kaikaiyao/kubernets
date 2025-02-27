@@ -148,6 +148,7 @@ def main():
             start_iter = checkpoint['iteration'] + 1
             initial_loss_history = checkpoint['loss_history']
             
+            args.n_iterations += start_iter
             if args.rank == 0:
                 logging.info(f"Resuming training from iteration {start_iter}")
 
