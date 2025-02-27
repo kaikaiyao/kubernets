@@ -348,7 +348,7 @@ def attack_label_based(
     batch_size: int = 16,
     epochs: int = 1,
     attack_batch_size: int = 16,
-    num_steps: int = 100,
+    num_steps: int = 500,
     alpha_values: list = None,
     train_surrogate: bool = True,
     rank: int = 0,
@@ -380,7 +380,7 @@ def attack_label_based(
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if alpha_values is None:
-        alpha_values = [1.0, 0.5, 0.1, 0.01]
+        alpha_values = [0.001, 0.005, 0.01, 0.1, 1.0, 2.0]
 
     logging.info("Starting attack_label_based function.")
 
