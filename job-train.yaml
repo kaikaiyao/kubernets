@@ -69,7 +69,7 @@ spec:
                       main.py train \
                       --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
                       --batch_size=8 \
-                      --n_iterations=75000 \
+                      --n_iterations=18750 \
                       --num_eval_samples=1000 \
                       --num_conv_layers=7 \
                       --num_pool_layers=7 \
@@ -86,8 +86,8 @@ spec:
           resources:
             limits:
               nvidia.com/gpu: "16"
-              cpu: "32"
-              memory: "128Gi"
+              cpu: "64"
+              memory: "256Gi"
           volumeMounts:
             - name: workspace
               mountPath: /workspace/kubernets/results
