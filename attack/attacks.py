@@ -380,7 +380,7 @@ def attack_label_based(
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if alpha_values is None:
-        alpha_values = [0.001, 0.005, 0.01, 0.1, 1.0, 2.0]
+        alpha_values = [0.001, 0.00005, 0.005, 0.01]
 
     logging.info("Starting attack_label_based function.")
 
