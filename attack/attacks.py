@@ -248,13 +248,11 @@ def perform_pgd_attack(
     attack_batch_size: int = 10,
 ) -> tuple:
     """
-    Perform PGD attack for different alpha values.
+    Perform PGD attack for different alpha values using pre-sigmoid logits.
     """
     surrogate_decoder.eval()
     for param in surrogate_decoder.parameters():
         param.requires_grad = False
-
-    criterion = nn.BCELoss()
 
     k_attack_scores_mean = []
     k_attack_scores_std = []
@@ -271,30 +269,32 @@ def perform_pgd_attack(
             image_attack_batch = image_attack[start_idx:end_idx].clone().detach().to(device)
             image_attack_batch.requires_grad = True
             original_images = image_attack_batch.clone().detach()
-            target_labels = torch.ones(image_attack_batch.size(0), 1, device=device)
 
-            # Add debugging info
-            initial_output = surrogate_decoder(image_attack_batch)
-            initial_loss = criterion(initial_output, target_labels)
-            initial_grad = torch.autograd.grad(initial_loss, image_attack_batch)[0]
-            logging.info(f"Initial output range: {initial_output.min().item():.4f} to {initial_output.max().item():.4f}")
-            logging.info(f"Initial loss: {initial_loss.item():.4f}")
-            logging.info(f"Initial gradient stats - mean: {initial_grad.abs().mean().item():.4f}, max: {initial_grad.abs().max().item():.4f}")
+            # Get the classifier layer to access pre-sigmoid outputs
+            classifier = surrogate_decoder.classifier if hasattr(surrogate_decoder, 'classifier') else surrogate_decoder.module.classifier
+
+            # Add debugging info for pre-sigmoid outputs
+            with torch.no_grad():
+                features = surrogate_decoder.features(image_attack_batch)
+                initial_logits = classifier[:-1](features.flatten(1))  # Remove sigmoid
+                logging.info(f"Initial logits range: {initial_logits.min().item():.4f} to {initial_logits.max().item():.4f}")
 
             for step in range(num_steps):
                 if step % 10 == 0:  # Log more frequently
                     with torch.no_grad():
-                        curr_output = surrogate_decoder(image_attack_batch)
-                        curr_loss = criterion(curr_output, target_labels)
-                        logging.info(f"Step {step}, output range: {curr_output.min().item():.4f} to {curr_output.max().item():.4f}")
-                        logging.info(f"Step {step}, loss: {curr_loss.item():.4f}")
+                        features = surrogate_decoder.features(image_attack_batch)
+                        curr_logits = classifier[:-1](features.flatten(1))  # Remove sigmoid
+                        logging.info(f"Step {step}, logits range: {curr_logits.min().item():.4f} to {curr_logits.max().item():.4f}")
                 
                 if image_attack_batch.grad is not None:
                     image_attack_batch.grad.zero_()
                 
-                outputs = surrogate_decoder(image_attack_batch)
-                # Use BCE loss since surrogate was trained with it
-                loss = criterion(outputs, target_labels)
+                # Forward pass through features and get pre-sigmoid outputs
+                features = surrogate_decoder.features(image_attack_batch)
+                logits = classifier[:-1](features.flatten(1))  # Remove sigmoid
+                
+                # Maximize logits directly
+                loss = -logits.mean()
                 loss.backward()
                 
                 if step % 10 == 0:
@@ -303,7 +303,7 @@ def perform_pgd_attack(
 
                 with torch.no_grad():
                     grad_sign = image_attack_batch.grad.sign()
-                    # Since we're minimizing BCE loss to target=1, we use minus
+                    # Since we're minimizing -logits, we use minus
                     image_attack_batch = image_attack_batch - alpha * grad_sign
                     image_attack_batch = torch.clamp(
                         image_attack_batch,
@@ -314,16 +314,17 @@ def perform_pgd_attack(
 
             # After PGD, check both surrogate and real decoder outputs
             with torch.no_grad():
-                final_surrogate_output = surrogate_decoder(image_attack_batch)
+                features = surrogate_decoder.features(image_attack_batch)
+                final_logits = classifier[:-1](features.flatten(1))
                 final_real_output = decoder(image_attack_batch)
-                logging.info(f"Final surrogate output range: {final_surrogate_output.min().item():.4f} to {final_surrogate_output.max().item():.4f}")
+                logging.info(f"Final logits range: {final_logits.min().item():.4f} to {final_logits.max().item():.4f}")
                 logging.info(f"Final real decoder norm range: {torch.norm(final_real_output, dim=1).min().item():.4f} to {torch.norm(final_real_output, dim=1).max().item():.4f}")
 
             k_attack_score_batch = (torch.norm(final_real_output, dim=1)).cpu().numpy()
             k_attack_scores_alpha.extend(k_attack_score_batch)
             logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
 
-            del image_attack_batch, outputs, loss, final_surrogate_output, final_real_output
+            del image_attack_batch, features, logits, final_real_output
             torch.cuda.empty_cache()
             gc.collect()
 
