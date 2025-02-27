@@ -248,26 +248,11 @@ def perform_pgd_attack(
     attack_batch_size: int = 10,
 ) -> tuple:
     """
-    Perform PGD attack for different alpha values.
-
-    Args:
-        surrogate_decoder (nn.Module): Trained surrogate decoder.
-        decoder (nn.Module): Real decoder for scoring.
-        image_attack (torch.Tensor): Images to attack.
-        max_delta (float): Maximum perturbation.
-        device (torch.device): Device for computations.
-        num_steps (int): Number of PGD steps.
-        alpha_values (list): List of step sizes to evaluate.
-        attack_batch_size (int, optional): Batch size for attack. Defaults to 10.
-
-    Returns:
-        tuple: Mean and standard deviation of attack scores.
+    Perform PGD attack for different alpha values using norm-based loss.
     """
     surrogate_decoder.eval()
     for param in surrogate_decoder.parameters():
         param.requires_grad = False
-
-    criterion = nn.BCELoss()
 
     k_attack_scores_mean = []
     k_attack_scores_std = []
@@ -284,24 +269,28 @@ def perform_pgd_attack(
             image_attack_batch = image_attack[start_idx:end_idx].clone().detach().to(device)
             image_attack_batch.requires_grad = True
             original_images = image_attack_batch.clone().detach()
-            target_labels = torch.ones(image_attack_batch.size(0), 1, device=device)
 
             # Add debugging info
             initial_output = surrogate_decoder(image_attack_batch)
-            initial_grad = torch.autograd.grad(criterion(initial_output, target_labels), image_attack_batch)[0]
-            logging.info(f"Initial output range: {initial_output.min().item():.4f} to {initial_output.max().item():.4f}")
+            # Use norm-based loss for gradient computation
+            initial_loss = -torch.norm(initial_output, dim=1).mean()
+            initial_grad = torch.autograd.grad(initial_loss, image_attack_batch)[0]
+            logging.info(f"Initial output norm range: {torch.norm(initial_output, dim=1).min().item():.4f} to {torch.norm(initial_output, dim=1).max().item():.4f}")
             logging.info(f"Initial gradient stats - mean: {initial_grad.abs().mean().item():.4f}, max: {initial_grad.abs().max().item():.4f}")
 
             for step in range(num_steps):
                 if step % 100 == 0:  # Log every 100 steps
                     with torch.no_grad():
                         curr_output = surrogate_decoder(image_attack_batch)
-                        logging.info(f"Step {step}, output range: {curr_output.min().item():.4f} to {curr_output.max().item():.4f}")
+                        curr_norms = torch.norm(curr_output, dim=1)
+                        logging.info(f"Step {step}, output norm range: {curr_norms.min().item():.4f} to {curr_norms.max().item():.4f}")
                 
                 if image_attack_batch.grad is not None:
                     image_attack_batch.grad.zero_()
+                
                 outputs = surrogate_decoder(image_attack_batch)
-                loss = criterion(outputs, target_labels)
+                # Use norm-based loss: we want to maximize the norm, so we minimize its negative
+                loss = -torch.norm(outputs, dim=1).mean()
                 loss.backward()
                 
                 # Log gradient statistics
@@ -311,7 +300,8 @@ def perform_pgd_attack(
 
                 with torch.no_grad():
                     grad_sign = image_attack_batch.grad.sign()
-                    image_attack_batch = image_attack_batch - alpha * grad_sign
+                    # Changed from minus to plus since we're maximizing norm
+                    image_attack_batch = image_attack_batch + alpha * grad_sign
                     image_attack_batch = torch.clamp(
                         image_attack_batch,
                         min=original_images - max_delta,
@@ -323,14 +313,15 @@ def perform_pgd_attack(
             with torch.no_grad():
                 final_surrogate_output = surrogate_decoder(image_attack_batch)
                 final_real_output = decoder(image_attack_batch)
-                logging.info(f"Final surrogate output range: {final_surrogate_output.min().item():.4f} to {final_surrogate_output.max().item():.4f}")
+                logging.info(f"Final surrogate output norm range: {torch.norm(final_surrogate_output, dim=1).min().item():.4f} to {torch.norm(final_surrogate_output, dim=1).max().item():.4f}")
                 logging.info(f"Final real decoder norm range: {torch.norm(final_real_output, dim=1).min().item():.4f} to {torch.norm(final_real_output, dim=1).max().item():.4f}")
 
-            k_attack_score_batch = (torch.norm(final_real_output, dim=1)).cpu().numpy() # if attack perform well -> 1, otherwise -> 0
+            # Compute attack scores using real decoder
+            k_attack_score_batch = (torch.norm(final_real_output, dim=1)).cpu().numpy()
             k_attack_scores_alpha.extend(k_attack_score_batch)
             logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
 
-            del image_attack_batch, target_labels, outputs, loss, final_surrogate_output, final_real_output
+            del image_attack_batch, outputs, loss, final_surrogate_output, final_real_output
             torch.cuda.empty_cache()
             gc.collect()
 
@@ -338,9 +329,7 @@ def perform_pgd_attack(
         std_score = np.std(k_attack_scores_alpha)
         k_attack_scores_mean.append(mean_score)
         k_attack_scores_std.append(std_score)
-        logging.info(
-            f"Alpha = {alpha}: k_attack_score mean = {mean_score:.3f}, std = {std_score:.3f}"
-        )
+        logging.info(f"Alpha = {alpha}: k_attack_score mean = {mean_score:.3f}, std = {std_score:.3f}")
 
     return k_attack_scores_mean, k_attack_scores_std
 
