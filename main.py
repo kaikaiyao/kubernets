@@ -61,7 +61,7 @@ def main():
     parser.add_argument("--attack_type", type=str, default="base_baseline", choices=["base_baseline", "base_secure", "combined_secure", "fixed_secure"], help="Attack type")
     parser.add_argument("--train_size", type=int, default=100000, help="training set size for training surrogate decoder")
     parser.add_argument("--image_attack_size", type=int, default=10000, help="size of attack image set")
-    parser.add_argument("--surrogate_decoder_path", type=str, default=None, help="Path to pre-trained surrogate decoder model")
+    parser.add_argument("--surrogate_decoder_model_path", type=str, default=None, help="Path to pre-trained surrogate decoder model")
 
     # DDP arguments
     parser.add_argument("--local_rank", type=int, default=0, help="Local rank for distributed training")
@@ -229,7 +229,7 @@ def main():
         local_path = args.stylegan2_url.split('/')[-1]
 
         # Check if a pre-trained surrogate decoder path is provided
-        if args.surrogate_decoder_path is not None:
+        if args.surrogate_decoder_model_path is not None:
             train_surrogate = False
         else:
             train_surrogate = True
@@ -308,8 +308,8 @@ def main():
         if train_surrogate:
             logging.info("Training surrogate decoder from scratch.")
         else:
-            logging.info(f"Loading pre-trained surrogate decoder from {args.surrogate_decoder_path}")
-            state_dict = torch.load(args.surrogate_decoder_path, map_location=device)
+            logging.info(f"Loading pre-trained surrogate decoder from {args.surrogate_decoder_model_path}")
+            state_dict = torch.load(args.surrogate_decoder_model_path, map_location=device)
             # If DDP is active, load into the module
             if train_surrogate:
                 surrogate_decoder.module.load_state_dict(state_dict)
