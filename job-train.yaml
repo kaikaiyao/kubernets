@@ -28,8 +28,6 @@ spec:
                     operator: In
                     values:
                       - NVIDIA-A100-SXM4-80GB
-                      - NVIDIA-A100-SXM4-40GB
-                      - NVIDIA-H100-80GB-HBM3
       # Add tolerations to allow scheduling on nodes with specific taints.
       tolerations:
         - key: "eidf098"
