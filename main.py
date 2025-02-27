@@ -59,7 +59,6 @@ def main():
 
     # Attack arguments
     parser.add_argument("--attack_type", type=str, default="base_baseline", choices=["base_baseline", "base_secure", "combined_secure", "fixed_secure"], help="Attack type")
-    parser.add_argument("--surrogate_decoder_type", type=str, default="resnet152", help="Type of surrogate decoder to use for bb binary attack")
     parser.add_argument("--train_size", type=int, default=100000, help="training set size for training surrogate decoder")
     parser.add_argument("--image_attack_size", type=int, default=10000, help="size of attack image set")
     parser.add_argument("--surrogate_decoder_path", type=str, default=None, help="Path to pre-trained surrogate decoder model")

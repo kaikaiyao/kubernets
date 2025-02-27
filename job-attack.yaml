@@ -62,7 +62,6 @@ spec:
                       --num_pool_layers_surr 7 \
                       --initial_channels_surr 64 \
                       --max_delta 0.05 \
-                      --surrogate_decoder_path '/nfs-user/data/baseline/decoder_model_final_20250226232519956769.pth' \
                       --train_size 10000 \
                       --image_attack_size 100 
               exit_status=$?
