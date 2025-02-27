@@ -294,7 +294,7 @@ def perform_pgd_attack(
                 loss.backward()
                 with torch.no_grad():
                     grad_sign = image_attack_batch.grad.sign()
-                    image_attack_batch = image_attack_batch + alpha * grad_sign
+                    image_attack_batch = image_attack_batch - alpha * grad_sign # since loss is computed towards target label, here we should use "-"
                     image_attack_batch = torch.clamp(
                         image_attack_batch,
                         min=original_images - max_delta,
