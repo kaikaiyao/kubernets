@@ -51,14 +51,12 @@ spec:
               value: "INFO"
             - name: NCCL_IB_DISABLE
               value: "1"
-            - name: MAX_DELTA
-              value: "${MAX_DELTA}"
             - name: NCCL_IB_HCA
               value: "^mlx5"
           command: ["/bin/bash", "-c"]
           args:
             - |
-              echo "Running experiment with max_delta=$MAX_DELTA"
+              echo "Running experiment"
               mkdir -p /workspace/kubernets/results
               curl -o ffhq70k-paper256-ada.pkl "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl"
               torchrun --nproc_per_node=1 \
@@ -77,7 +75,7 @@ spec:
                       --lr_M_hat=2e-4 \
                       --lr_D=2e-4 \
                       --seed_key=2024 \
-                      --max_delta=$MAX_DELTA \
+                      --max_delta=0.05 \
                       --resume_checkpoint "/nfs-user/data/encryption/checkpoint_final_20250227103121984723.pt" \
                       --mask_switch_on \
                       --saving_path=results
