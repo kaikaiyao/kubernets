@@ -1,5 +1,15 @@
 import torch.nn as nn
 import math
+import torch.nn.functional as F
+
+class MCDropout(nn.Module):
+    def __init__(self, p=0.5):
+        super(MCDropout, self).__init__()
+        self.p = p
+
+    def forward(self, x):
+        # Always apply dropout, regardless of model.train() or model.eval()
+        return F.dropout(x, p=self.p, training=True)
 
 class FlexibleDecoder(nn.Module):
     def __init__(
