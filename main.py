@@ -62,6 +62,10 @@ def main():
     parser.add_argument("--train_size", type=int, default=100000, help="training set size for training surrogate decoder")
     parser.add_argument("--image_attack_size", type=int, default=10000, help="size of attack image set")
     parser.add_argument("--surrogate_decoder_model_path", type=str, default=None, help="Path to pre-trained surrogate decoder model")
+    parser.add_argument("--batch_size_surr", type=int, default=16, help="Batch size for training the surrogate decoder")
+    parser.add_argument("--num_steps_pgd", type=int, default=1000, help="Number of steps during the attack")
+    parser.add_argument("--alpha_values_pgd", type=str, default="0.1,0.5,1.0", help="Alpha values for the attack (comma-separated list of floats)")
+    parser.add_argument("--attack_batch_size_pgd", type=int, default=10, help="Batch size for the attack")
 
     # DDP arguments
     parser.add_argument("--local_rank", type=int, default=0, help="Local rank for distributed training")
@@ -234,6 +238,9 @@ def main():
         else:
             train_surrogate = True
 
+        # Convert alpha_values string to a vector of values
+        args.alpha_values_pgd = [float(x) for x in args.alpha_values_pgd.split(',')]
+
         # Initialize device and DDP if training surrogate decoder
         if train_surrogate:
             dist.init_process_group(backend='nccl', init_method='env://')
@@ -327,11 +334,11 @@ def main():
             device,
             args.train_size, # note: here, it's per GPU (per DDP's enabling)
             args.image_attack_size,
-            batch_size=16, # BS for training the surrogate decoder
+            batch_size=args.batch_size_surr, # BS for training the surrogate decoder
             epochs=1,  # Assuming default from parser if not specified
-            attack_batch_size=16,  # Assuming default from parser if not specified
-            num_steps=1000,  # Assuming default from parser if not specified
-            alpha_values=None,  # Will use default in attack_label_based
+            attack_batch_size=args.attack_batch_size_pgd,  # Assuming default from parser if not specified
+            num_steps=args.num_steps_pgd,  # Assuming default from parser if not specified
+            alpha_values=args.alpha_values_pgd,  # Will use default in attack_label_based
             train_surrogate=train_surrogate,
             rank=args.rank,
             world_size=args.world_size if train_surrogate else 1
