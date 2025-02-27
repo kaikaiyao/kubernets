@@ -286,6 +286,12 @@ def perform_pgd_attack(
             original_images = image_attack_batch.clone().detach()
             target_labels = torch.ones(image_attack_batch.size(0), 1, device=device)
 
+            # Add debugging info
+            initial_output = surrogate_decoder(image_attack_batch)
+            initial_grad = torch.autograd.grad(criterion(initial_output, target_labels), image_attack_batch)[0]
+            logging.info(f"Initial output range: {initial_output.min().item():.4f} to {initial_output.max().item():.4f}")
+            logging.info(f"Initial gradient stats - mean: {initial_grad.abs().mean().item():.4f}, max: {initial_grad.abs().max().item():.4f}")
+
             for step in range(num_steps):
                 if step % 100 == 0:  # Log every 100 steps
                     with torch.no_grad():
@@ -319,12 +325,12 @@ def perform_pgd_attack(
                 final_real_output = decoder(image_attack_batch)
                 logging.info(f"Final surrogate output range: {final_surrogate_output.min().item():.4f} to {final_surrogate_output.max().item():.4f}")
                 logging.info(f"Final real decoder norm range: {torch.norm(final_real_output, dim=1).min().item():.4f} to {torch.norm(final_real_output, dim=1).max().item():.4f}")
- 
-            k_attack_score_batch = (torch.norm(k_attack_batch, dim=1)).cpu().numpy() # if attack perform well -> 1, otherwise -> 0
+
+            k_attack_score_batch = (torch.norm(final_real_output, dim=1)).cpu().numpy() # if attack perform well -> 1, otherwise -> 0
             k_attack_scores_alpha.extend(k_attack_score_batch)
             logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
 
-            del image_attack_batch, target_labels, outputs, loss, k_attack_batch
+            del image_attack_batch, target_labels, outputs, loss, final_surrogate_output, final_real_output
             torch.cuda.empty_cache()
             gc.collect()
 
