@@ -66,7 +66,7 @@ spec:
                       --surrogate_decoder_model_path '/nfs-user/data/baseline/surrogate_decoder_200000samples.pt' \
                       --image_attack_size 10 \
                       --num_steps_pgd 1000 \
-                      --alpha_values_pgd ["0.001","0.005","0.01"]
+                      --alpha_values_pgd "0.001,0.005,0.01"
               exit_status=$?
               echo "Python script finished with exit status $exit_status"
               sleep infinity
