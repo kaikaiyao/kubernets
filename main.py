@@ -330,7 +330,7 @@ def main():
             batch_size=16, # BS for training the surrogate decoder
             epochs=1,  # Assuming default from parser if not specified
             attack_batch_size=16,  # Assuming default from parser if not specified
-            num_steps=100,  # Assuming default from parser if not specified
+            num_steps=1000,  # Assuming default from parser if not specified
             alpha_values=None,  # Will use default in attack_label_based
             train_surrogate=train_surrogate,
             rank=args.rank,
