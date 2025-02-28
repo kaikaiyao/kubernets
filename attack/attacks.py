@@ -189,15 +189,22 @@ def fine_tune_surrogate(
     decoder: nn.Module,
     images: torch.Tensor,
     device: torch.device,
-    epochs: int = 2,
+    epochs: int = 20,  # Increased from 2
     batch_size: int = 16,
     rank: int = 0
 ) -> nn.Module:
     """Fine-tune surrogate on perturbed images labeled by real decoder."""
-    perturbed_images = generate_initial_perturbations(surrogate_decoder, images, device)
+    perturbed_images = generate_initial_perturbations(
+        surrogate_decoder=surrogate_decoder,
+        images=images,
+        device=device,
+        num_steps=100,  # Increased from 40
+        alpha=0.05,    # Increased from 0.01
+        max_delta=2.0
+    )
     surrogate_decoder.train()
-    optimizer = torch.optim.Adam(surrogate_decoder.parameters(), lr=0.0001)
-    criterion = nn.BCELoss()
+    optimizer = torch.optim.Adam(surrogate_decoder.parameters(), lr=0.001)  # Increased from 0.0001
+    criterion = nn.MSELoss()  # Switched from BCELoss to MSELoss
 
     num_batches = (perturbed_images.size(0) + batch_size - 1) // batch_size
     for epoch in range(epochs):
@@ -207,6 +214,8 @@ def fine_tune_surrogate(
             batch = perturbed_images[start:end]
             with torch.no_grad():
                 real_labels = decoder(batch)
+                if i % 10 == 0 and rank == 0:
+                    logging.info(f"Real labels mean: {real_labels.mean().item():.3f}, range: [{real_labels.min().item():.3f}, {real_labels.max().item():.3f}]")
             optimizer.zero_grad()
             outputs = surrogate_decoder(batch)
             loss = criterion(outputs, real_labels)
