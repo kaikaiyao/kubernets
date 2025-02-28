@@ -199,7 +199,7 @@ def generate_attack_images(
     return image_attack
 
 
-def perform_pgd_attack_with_momentum(
+def perform_pgd_attack(
     attack_type: str,
     surrogate_decoder: nn.Module,
     decoder: nn.Module,
