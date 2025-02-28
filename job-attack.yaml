@@ -62,7 +62,7 @@ spec:
                       --num_pool_layers_surr 7 \
                       --initial_channels_surr 64 \
                       --max_delta 0.05 \
-                      --train_size 100000 \
+                      --train_size 1000000 \
                       --image_attack_size 10 \
                       --num_steps_pgd 500 \
                       --alpha_values_pgd "0.0001,0.0005,0.001,0.005,0.01,0.05"
