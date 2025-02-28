@@ -210,7 +210,7 @@ def perform_pgd_attack(
     alpha_values: list,
     momentum: float = 0.8,
     attack_batch_size: int = 10,
-    num_transforms: int = 0,
+    num_transforms: int = 3,
 ) -> tuple: # enabled momentum and transforms
     surrogate_decoder.eval()
     decoder.eval()
