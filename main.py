@@ -66,6 +66,7 @@ def main():
     parser.add_argument("--num_steps_pgd", type=int, default=1000, help="Number of steps during the attack")
     parser.add_argument("--alpha_values_pgd", type=str, default="0.1,0.5,1.0", help="Alpha values for the attack (comma-separated list of floats)")
     parser.add_argument("--attack_batch_size_pgd", type=int, default=10, help="Batch size for the attack")
+    parser.add_argument("--momentum_pgd", type=float, default=0.9, help="Momentum factor for PGD attack")
 
     # DDP arguments
     parser.add_argument("--local_rank", type=int, default=0, help="Local rank for distributed training")
@@ -341,7 +342,8 @@ def main():
             alpha_values=args.alpha_values_pgd,  # Will use default in attack_label_based
             train_surrogate=train_surrogate,
             rank=args.rank,
-            world_size=args.world_size if train_surrogate else 1
+            world_size=args.world_size if train_surrogate else 1,
+            momentum=args.momentum_pgd  # Add momentum parameter
         )
 
 

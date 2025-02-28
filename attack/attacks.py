@@ -208,6 +208,7 @@ def perform_pgd_attack(
     num_steps: int,
     alpha_values: list,
     attack_batch_size: int = 10,
+    momentum: float = 0.9,
 ) -> tuple:
     """
     Perform PGD attack for different alpha values with gradient comparison.
@@ -218,9 +219,10 @@ def perform_pgd_attack(
         image_attack (torch.Tensor): Images to attack.
         max_delta (float): Maximum perturbation.
         device (torch.device): Device for computations.
-        num_steps (int): Number of PGD<|control627|>
+        num_steps (int): Number of PGD steps.
         alpha_values (list): List of step sizes to evaluate.
         attack_batch_size (int, optional): Batch size for attack. Defaults to 10.
+        momentum (float, optional): Momentum factor for PGD. Defaults to 0.9.
 
     Returns:
         tuple: Mean and standard deviation of attack scores.
@@ -250,6 +252,9 @@ def perform_pgd_attack(
             image_attack_batch.requires_grad = True
             original_images = image_attack_batch.clone().detach()
             target_labels = torch.ones(image_attack_batch.size(0), 1, device=device)
+
+            # Initialize momentum buffer
+            momentum_buffer = torch.zeros_like(image_attack_batch)
 
             # Gradient comparison for the first batch
             if batch_idx == 0:
@@ -281,8 +286,14 @@ def perform_pgd_attack(
                 loss = criterion(outputs, target_labels)
                 loss.backward()
                 with torch.no_grad():
-                    grad_sign = image_attack_batch.grad.sign()
-                    image_attack_batch = image_attack_batch - alpha * grad_sign  # Perturb towards target
+                    # Update momentum buffer
+                    grad = image_attack_batch.grad.detach()
+                    momentum_buffer = momentum * momentum_buffer + grad / torch.norm(grad, p=1)
+                    
+                    # Update image using momentum
+                    image_attack_batch = image_attack_batch - alpha * momentum_buffer.sign()
+                    
+                    # Project back to epsilon ball
                     image_attack_batch = torch.clamp(
                         image_attack_batch,
                         min=original_images - max_delta,
@@ -291,7 +302,7 @@ def perform_pgd_attack(
                     image_attack_batch.requires_grad = True
 
                     # Calculate and log attack score for current step
-                    if step % 20 == 0:  # Log every 100 steps to avoid excessive output
+                    if step % 20 == 0:  # Log every 20 steps to avoid excessive output
                         if attack_type in ["base_baseline"]:
                             k_attack_step = decoder(image_attack_batch)
                         elif attack_type in ["base_secure", "combined_secure", "fixed_secure"]:
@@ -320,7 +331,7 @@ def perform_pgd_attack(
             k_attack_scores_alpha.extend(k_attack_score_batch)
             logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
 
-            del image_attack_batch, target_labels, outputs, loss, k_attack_batch
+            del image_attack_batch, target_labels, outputs, loss, k_attack_batch, momentum_buffer
             torch.cuda.empty_cache()
             gc.collect()
 
@@ -353,6 +364,7 @@ def attack_label_based(
     train_surrogate: bool = True,
     rank: int = 0,
     world_size: int = 1,
+    momentum: float = 0.9,
 ) -> tuple:
     """
     Performs a label-based attack on a watermarked GAN model.
@@ -374,6 +386,7 @@ def attack_label_based(
         num_steps (int, optional): PGD steps. Defaults to 100.
         alpha_values (list, optional): Step sizes for PGD. Defaults to None.
         train_surrogate (bool, optional): Whether to train the surrogate decoder. Defaults to True.
+        momentum (float, optional): Momentum factor for PGD attack. Defaults to 0.9.
 
     Returns:
         tuple: Mean and standard deviation of attack scores.
@@ -430,7 +443,8 @@ def attack_label_based(
             device=device,
             num_steps=num_steps,
             alpha_values=alpha_values,
-            attack_batch_size=attack_batch_size
+            attack_batch_size=attack_batch_size,
+            momentum=momentum
         )
         logging.info("PGD attack for different alpha values completed.")
 
