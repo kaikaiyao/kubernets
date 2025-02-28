@@ -246,6 +246,7 @@ def perform_pgd_attack(
 
                 # Compute gradients over multiple transformations
                 total_grad = torch.zeros_like(image_attack_batch)
+                
                 for _ in range(num_transforms):
                     # Random resize (e.g., 90-110% of original size)
                     scale = torch.rand(1).item() * 0.2 + 0.9  # 0.9 to 1.1
@@ -283,7 +284,7 @@ def perform_pgd_attack(
             k_attack_scores_alpha.extend(k_attack_score_batch)
             logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
 
-            del image_attack_batch, target_labels, outputs, loss, k_attack_batch
+            del image_attack_batch, target_labels, loss, k_attack_batch
             torch.cuda.empty_cache()
 
         mean_score = np.mean(k_attack_scores_alpha)
