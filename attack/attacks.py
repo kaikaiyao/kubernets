@@ -189,40 +189,73 @@ def fine_tune_surrogate(
     decoder: nn.Module,
     images: torch.Tensor,
     device: torch.device,
-    epochs: int = 20,  # Increased from 2
+    epochs: int = 20,
     batch_size: int = 16,
     rank: int = 0
 ) -> nn.Module:
-    """Fine-tune surrogate on perturbed images labeled by real decoder."""
+    """Fine-tune surrogate on perturbed images labeled by real decoder using the original training loss design."""
     perturbed_images = generate_initial_perturbations(
         surrogate_decoder=surrogate_decoder,
         images=images,
         device=device,
-        num_steps=100,  # Increased from 40
-        alpha=0.05,    # Increased from 0.01
+        num_steps=100,
+        alpha=0.05,
         max_delta=2.0
     )
     surrogate_decoder.train()
-    optimizer = torch.optim.Adam(surrogate_decoder.parameters(), lr=0.001)  # Increased from 0.0001
-    criterion = nn.MSELoss()  # Switched from BCELoss to MSELoss
+    optimizer = torch.optim.Adagrad(surrogate_decoder.parameters(), lr=0.0001)  # Changed to Adagrad
 
     num_batches = (perturbed_images.size(0) + batch_size - 1) // batch_size
     for epoch in range(epochs):
+        epoch_loss = 0.0
+        epoch_norm_diff = 0.0
+        num_samples = 0
+
         for i in range(num_batches):
             start = i * batch_size
             end = min((i + 1) * batch_size, perturbed_images.size(0))
             batch = perturbed_images[start:end]
+            
+            # Get outputs from both decoders
             with torch.no_grad():
-                real_labels = decoder(batch)
-                if i % 10 == 0 and rank == 0:
-                    logging.info(f"Real labels mean: {real_labels.mean().item():.3f}, range: [{real_labels.min().item():.3f}, {real_labels.max().item():.3f}]")
+                k_real = decoder(batch)
+            k_surrogate = surrogate_decoder(batch)
+            
+            # Calculate norms and norm difference
+            d_k_real = torch.norm(k_real, dim=1)
+            d_k_surrogate = torch.norm(k_surrogate, dim=1)
+            norm_diff = d_k_real - d_k_surrogate
+            
+            # Use the same loss as in train_surrogate_decoder
+            loss = ((norm_diff).max() + 1) ** 2
+
             optimizer.zero_grad()
-            outputs = surrogate_decoder(batch)
-            loss = criterion(outputs, real_labels)
             loss.backward()
             optimizer.step()
+
+            epoch_loss += loss.item() * batch.size(0)
+            epoch_norm_diff += norm_diff.mean().item() * batch.size(0)
+            num_samples += batch.size(0)
+
             if rank == 0 and i % 10 == 0:
-                logging.info(f"Fine-tune Epoch {epoch+1}, Batch {i+1}/{num_batches}, Loss: {loss.item():.4f}")
+                logging.info(
+                    f"Fine-tune Epoch {epoch+1}, Batch {i+1}/{num_batches}, "
+                    f"Loss: {loss.item():.4f}, Norm diff: {norm_diff.mean().item():.4f}, "
+                    f"d_k_real range: [{d_k_real.min().item():.4f}, {d_k_real.max().item():.4f}], "
+                    f"d_k_surrogate range: [{d_k_surrogate.min().item():.4f}, {d_k_surrogate.max().item():.4f}]"
+                )
+
+        avg_epoch_loss = epoch_loss / num_samples
+        avg_norm_diff = epoch_norm_diff / num_samples
+        if rank == 0:
+            logging.info(
+                f"Fine-tune Epoch {epoch + 1}/{epochs} Completed. "
+                f"Average Loss: {avg_epoch_loss:.4f}, Average Norm Difference: {avg_norm_diff:.4f}"
+            )
+
+        torch.cuda.empty_cache()
+        gc.collect()
+
     return surrogate_decoder
 
 def perform_pgd_attack(
@@ -392,7 +425,7 @@ def attack_label_based(
             decoder=decoder,
             images=image_attack,
             device=device,
-            epochs=2,  # Adjustable
+            epochs=20,  # Adjustable
             batch_size=batch_size,
             rank=rank
         )
