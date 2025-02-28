@@ -290,6 +290,19 @@ def perform_pgd_attack(
                     )
                     image_attack_batch.requires_grad = True
 
+                    # Calculate and log attack score for current step
+                    if step % 20 == 0:  # Log every 100 steps to avoid excessive output
+                        if attack_type in ["base_baseline"]:
+                            k_attack_step = decoder(image_attack_batch)
+                        elif attack_type in ["base_secure", "combined_secure", "fixed_secure"]:
+                            k_mask = generate_mask_secret_key(image_attack_batch.shape, 2024, device=device)
+                            k_attack_step = decoder(mask_image_with_key(image_attack_batch, k_mask))
+                        k_attack_score_step = torch.norm(k_attack_step, dim=1).mean().item()
+                        logging.info(f"Alpha = {alpha}, Batch {batch_idx + 1}, Step {step}/{num_steps}, Attack Score: {k_attack_score_step:.4f}")
+                        del k_attack_step, k_attack_score_step
+                        if attack_type in ["base_secure", "combined_secure", "fixed_secure"]:
+                            del k_mask
+
                 torch.cuda.empty_cache()
                 gc.collect()
 
