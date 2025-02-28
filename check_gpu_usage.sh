@@ -1,28 +1,69 @@
 #!/bin/bash
 
-# Fetch all pod information in JSON format
-pods=$(kubectl get pods --all-namespaces -o json)
+kubectl describe pods --all-namespaces | awk '
+BEGIN {
+    RS = "";  # Pods are separated by blank lines
+    FS = "\n";
+}
 
-# Initialize an associative array to store GPU usage per user
-declare -A gpu_usage
+{
+    status = "";
+    user = "";
+    gpus = 0;
+    in_limits = 0;
+    in_labels = 0;
+    labels = "";
 
-# Parse the JSON output
-while read -r line; do
-    # Extract the user label
-    user=$(echo "$line" | jq -r '.metadata.labels."eidf/user"')
-    
-    # Extract the GPU request
-    gpu_request=$(echo "$line" | jq -r '.spec.containers[].resources.requests."nvidia\.com/gpu"')
-    
-    # Check if both user and gpu_request are not null
-    if [[ "$user" != "null" && "$gpu_request" != "null" ]]; then
-        # Add the GPU request to the user's total GPU usage
-        gpu_usage["$user"]=$((${gpu_usage["$user"]:-0} + gpu_request))
-    fi
-done < <(echo "$pods" | jq -c '.items[]')
+    for (i = 1; i <= NF; i++) {
+        line = $i;
 
-# Output the GPU usage per user
-echo "GPU Usage per User:"
-for user in "${!gpu_usage[@]}"; do
-    echo "User: $user, GPU Usage: ${gpu_usage[$user]}"
-done
+        # Capture pod status
+        if (line ~ /^Status:[[:space:]]+Running/) {
+            status = "Running";
+        }
+
+        # Handle multi-line Labels section
+        if (line ~ /^Labels:/) {
+            in_labels = 1;
+            labels = substr(line, index(line, ":") + 2);
+        } else if (in_labels && line ~ /^[[:space:]]/) {
+            sub(/^[[:space:]]+/, "", line);
+            labels = labels " " line;
+        } else if (in_labels) {
+            in_labels = 0;
+            # Parse labels
+            split(labels, label_arr, /,[[:space:]]*/);
+            for (idx in label_arr) {
+                if (label_arr[idx] ~ /eidf\/user=/) {
+                    split(label_arr[idx], user_pair, "=");
+                    user = user_pair[2];
+                    break;
+                }
+            }
+        }
+
+        # Track GPU limits in containers
+        if (line ~ /Limits:/) {
+            in_limits = 1;
+        }
+        if (line ~ /Requests:/) {
+            in_limits = 0;
+        }
+        if (in_limits && line ~ /nvidia.com\/gpu:/) {
+            split(line, parts, /nvidia.com\/gpu:[[:space:]]+/);
+            gpu_count = parts[2] + 0;
+            gpus += gpu_count;
+        }
+    }
+
+    if (status == "Running" && user != "") {
+        total_gpus[user] += gpus;
+    }
+}
+
+END {
+    printf "%-20s %s\n", "USER", "GPUs";
+    for (u in total_gpus) {
+        printf "%-20s %d\n", u, total_gpus[u];
+    }
+}'
