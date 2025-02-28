@@ -208,7 +208,7 @@ def perform_pgd_attack(
     num_steps: int,
     alpha_values: list,
     attack_batch_size: int = 10,
-    momentum: float = 0.9,
+    momentum: float = 0.8,
 ) -> tuple:
     """
     Perform PGD attack for different alpha values with gradient comparison.
