@@ -49,5 +49,5 @@ done < <(echo "$pods" | jq -c '.items[]')
 # Output the GPU usage per user, sorted by GPU usage in descending order
 echo -e "USER\t\tGPUs\tGPU Type"
 for user in $(for u in "${!gpu_usage[@]}"; do echo -e "$u\t${gpu_usage[$u]}\t${gpu_types[$u]}"; done | sort -nr -k2); do
-    echo "$user"
+    echo -e "$user"
 done
