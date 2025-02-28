@@ -220,7 +220,7 @@ def fine_tune_surrogate(
     decoder: nn.Module,
     images: torch.Tensor,
     device: torch.device,
-    epochs: int = 20,
+    epochs: int = 3,
     batch_size: int = 16,
     rank: int = 0
 ) -> nn.Module:
@@ -526,7 +526,7 @@ def attack_label_based(
                 decoder=decoder,
                 images=image_attack,
                 device=device,
-                epochs=20,  # Adjustable
+                epochs=3,  # Adjustable
                 batch_size=batch_size,
                 rank=rank
             )
