@@ -190,31 +190,87 @@ def generate_attack_images(
 
 def generate_initial_perturbations(
     surrogate_decoder: nn.Module,
+    decoder: nn.Module,
     images: torch.Tensor,
     device: torch.device,
-    num_steps: int = 200,
+    num_steps: int = 100,
     alpha: float = 0.05,
     max_delta: float = 2.0
-) -> torch.Tensor:
-    """Generate perturbed images using basic PGD for fine-tuning."""
+) -> tuple:
+    """Generate perturbed images using basic PGD for fine-tuning.
+    
+    Args:
+        surrogate_decoder: The surrogate decoder model
+        decoder: The real decoder model for evaluation
+        images: Input images to perturb
+        device: Device to use
+        num_steps: Number of PGD steps
+        alpha: Step size for PGD
+        max_delta: Maximum perturbation size
+        
+    Returns:
+        tuple: (perturbed_images, k_scores_orig, k_scores_pert)
+            - perturbed_images: The perturbed version of input images
+            - k_scores_orig: Norm of real decoder's output on original images
+            - k_scores_pert: Norm of real decoder's output on perturbed images
+    """
     surrogate_decoder.eval()
+    decoder.eval()
     images = images.clone().detach().to(device)
     images.requires_grad = True
     original_images = images.clone().detach()
     criterion = nn.BCELoss()
     target_labels = torch.ones(images.size(0), 1, device=device)
+    
+    # Get initial k_scores from real decoder
+    with torch.no_grad():
+        k_orig = decoder(original_images)
+        k_scores_orig = torch.norm(k_orig, dim=1)
 
-    for _ in range(num_steps):
+    best_perturbation = None
+    best_k_scores = None
+    min_k_score = float('inf')
+
+    for step in range(num_steps):
         if images.grad is not None:
             images.grad.zero_()
+        
+        # Get surrogate decoder's output and compute loss
         outputs = surrogate_decoder(images)
         loss = criterion(outputs, target_labels)
         loss.backward()
+        
         with torch.no_grad():
+            # Update images with PGD step
             images = images - alpha * images.grad.sign()
+            # Project back to valid perturbation range
             images = torch.clamp(images, original_images - max_delta, original_images + max_delta)
+            images = torch.clamp(images, -1, 1)  # Ensure valid image range
             images.requires_grad = True
-    return images.detach()
+            
+            # Evaluate real decoder's output
+            k_pert = decoder(images)
+            k_scores_pert = torch.norm(k_pert, dim=1)
+            
+            # Keep track of best perturbation (one that minimizes k_scores)
+            current_min = k_scores_pert.mean().item()
+            if current_min < min_k_score:
+                min_k_score = current_min
+                best_perturbation = images.clone().detach()
+                best_k_scores = k_scores_pert.clone().detach()
+            
+            if step % 10 == 0:
+                logging.info(
+                    f"PGD Step {step}, "
+                    f"Original k_scores: {k_scores_orig.mean().item():.4f} "
+                    f"[{k_scores_orig.min().item():.4f}, {k_scores_orig.max().item():.4f}], "
+                    f"Perturbed k_scores: {k_scores_pert.mean().item():.4f} "
+                    f"[{k_scores_pert.min().item():.4f}, {k_scores_pert.max().item():.4f}], "
+                    f"Best k_score so far: {min_k_score:.4f}"
+                )
+
+    # Return the best perturbation found
+    return best_perturbation, k_scores_orig, best_k_scores
 
 def fine_tune_surrogate(
     surrogate_decoder: nn.Module,
@@ -248,8 +304,9 @@ def fine_tune_surrogate(
             
             # Generate perturbed images with smaller perturbation initially
             alpha = 0.05  # Fixed alpha for stability
-            perturbed_batch = generate_initial_perturbations(
+            perturbed_batch, k_scores_orig, k_scores_pert = generate_initial_perturbations(
                 surrogate_decoder=surrogate_decoder,
+                decoder=decoder,
                 images=batch,
                 device=device,
                 num_steps=50,  # Reduced steps
@@ -319,7 +376,8 @@ def fine_tune_surrogate(
                     f"Real Norm Diff: {real_norm_diff.mean().item():.4f}, "
                     f"Surrogate Norm Diff: {surrogate_norm_diff.mean().item():.4f}, "
                     f"Real Norm Range: [{d_k_real.min().item():.4f}, {d_k_real.max().item():.4f}], "
-                    f"Surrogate Norm Range: [{d_k_surrogate.min().item():.4f}, {d_k_surrogate.max().item():.4f}]"
+                    f"Surrogate Norm Range: [{d_k_surrogate.min().item():.4f}, {d_k_surrogate.max().item():.4f}], "
+                    f"PGD k_scores - Original: {k_scores_orig.mean().item():.4f}, Perturbed: {k_scores_pert.mean().item():.4f}"
                 )
 
             del batch, perturbed_batch, k_real, k_real_orig, k_surrogate, k_surrogate_orig
