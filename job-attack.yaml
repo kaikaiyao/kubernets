@@ -39,6 +39,8 @@ spec:
             value: "INFO"
           - name: NCCL_IB_DISABLE
             value: "1"
+          - name: NUM_RUNS
+            value: "8"
           command: ["/bin/bash", "-c"]
           args:
             - |
@@ -46,8 +48,11 @@ spec:
               mkdir -p /workspace/kubernets/results
               curl -o ffhq70k-paper256-ada.pkl "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl"
               
-              for run in {1..8}; do
-                echo "Starting run $run of 3"
+              total_runs=${NUM_RUNS:-1}
+              echo "Will perform $total_runs runs"
+              
+              for run in $(seq 1 $total_runs); do
+                echo "Starting run $run of $total_runs"
                 torchrun --nproc_per_node=4 \
                         --nnodes=1 \
                         --node_rank=0 \
