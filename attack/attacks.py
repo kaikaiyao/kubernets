@@ -193,10 +193,10 @@ def fine_tune_surrogate(
     batch_size: int = 16,
     rank: int = 0
 ) -> nn.Module:
-    """Fine-tune surrogate on perturbed images labeled by real decoder to minimize the norm difference, generating images on-the-fly."""
+    """Fine-tune surrogate on perturbed images labeled by real decoder to match output patterns."""
     surrogate_decoder.train()
-    optimizer = torch.optim.Adagrad(surrogate_decoder.parameters(), lr=0.001)  # Increased learning rate
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
+    optimizer = torch.optim.Adam(surrogate_decoder.parameters(), lr=0.005)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
 
     num_batches = (images.size(0) + batch_size - 1) // batch_size
     best_loss = float('inf')
@@ -216,7 +216,7 @@ def fine_tune_surrogate(
                 surrogate_decoder=surrogate_decoder,
                 images=batch,
                 device=device,
-                num_steps=50,  # Reduced steps for faster iteration
+                num_steps=50,
                 alpha=0.05,
                 max_delta=2.0
             )
@@ -224,30 +224,28 @@ def fine_tune_surrogate(
             # Get outputs from both decoders
             with torch.no_grad():
                 k_real = decoder(perturbed_batch)
-                # Apply sigmoid to normalize real decoder outputs
-                k_real = torch.sigmoid(k_real)
-            
             k_surrogate = surrogate_decoder(perturbed_batch)
-            # Apply sigmoid to normalize surrogate outputs
-            k_surrogate = torch.sigmoid(k_surrogate)
             
-            # Calculate normalized norms
+            # Calculate cosine similarity between real and surrogate outputs
+            cos_sim = F.cosine_similarity(k_real.view(k_real.size(0), -1),
+                                        k_surrogate.view(k_surrogate.size(0), -1),
+                                        dim=1)
+            
+            # Calculate norms for monitoring
             d_k_real = torch.norm(k_real, dim=1)
             d_k_surrogate = torch.norm(k_surrogate, dim=1)
             
-            # Compute relative error and MSE loss
-            norm_diff = d_k_real - d_k_surrogate
-            relative_error = torch.abs(norm_diff) / (d_k_real + 1e-6)
-            mse_loss = F.mse_loss(k_surrogate, k_real)
-            
-            # Combined loss with both norm difference and direct output matching
-            loss = torch.mean(relative_error) + mse_loss
+            # Loss is negative cosine similarity (to maximize similarity)
+            # plus L1 loss on the norm differences
+            cos_loss = -cos_sim.mean()
+            norm_loss = F.l1_loss(d_k_surrogate, d_k_real)
+            loss = cos_loss + 0.1 * norm_loss
 
             optimizer.zero_grad()
             loss.backward()
             
             # Add gradient clipping
-            torch.nn.utils.clip_grad_norm_(surrogate_decoder.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(surrogate_decoder.parameters(), max_norm=5.0)
             
             optimizer.step()
 
@@ -257,8 +255,9 @@ def fine_tune_surrogate(
             if rank == 0 and i % 10 == 0:
                 logging.info(
                     f"Fine-tune Epoch {epoch+1}, Batch {i+1}/{num_batches}, "
-                    f"Loss: {loss.item():.4f}, MSE: {mse_loss.item():.4f}, "
-                    f"Relative Error: {relative_error.mean().item():.4f}, "
+                    f"Loss: {loss.item():.4f}, Cos Loss: {cos_loss.item():.4f}, "
+                    f"Norm Loss: {norm_loss.item():.4f}, "
+                    f"Cos Sim: {cos_sim.mean().item():.4f}, "
                     f"d_k_real range: [{d_k_real.min().item():.4f}, {d_k_real.max().item():.4f}], "
                     f"d_k_surrogate range: [{d_k_surrogate.min().item():.4f}, {d_k_surrogate.max().item():.4f}]"
                 )
@@ -271,7 +270,7 @@ def fine_tune_surrogate(
             )
         
         # Learning rate scheduling
-        scheduler.step(avg_epoch_loss)
+        scheduler.step()
         
         # Save best model
         if avg_epoch_loss < best_loss:
