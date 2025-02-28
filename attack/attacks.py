@@ -199,7 +199,7 @@ def generate_attack_images(
     return image_attack
 
 
-def perform_di_mim_attack(
+def perform_pgd_attack(
     attack_type: str,
     surrogate_decoder: nn.Module,
     decoder: nn.Module,
@@ -211,7 +211,7 @@ def perform_di_mim_attack(
     momentum: float = 0.8,
     attack_batch_size: int = 10,
     num_transforms: int = 0,
-) -> tuple:
+) -> tuple: # enabled momentum and transforms
     surrogate_decoder.eval()
     decoder.eval()
     for param in surrogate_decoder.parameters():
