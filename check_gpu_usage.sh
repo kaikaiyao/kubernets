@@ -15,7 +15,7 @@ while read -r line; do
     user=$(echo "$line" | jq -r '.metadata.labels."eidf/user"')
     
     # Extract the GPU request
-    gpu_request=$(echo "$line" | jq -r '.spec.containers[].resources.requests."nvidia\.com/gpu"')
+    gpu_request=$(echo "$line" | jq -r '.spec.containers[].resources.requests."nvidia.com/gpu"')
     
     # Check if both user and gpu_request are not null
     if [[ "$user" != "null" && "$gpu_request" != "null" ]]; then
