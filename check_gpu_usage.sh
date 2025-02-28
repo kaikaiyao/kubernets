@@ -6,9 +6,6 @@ NAMESPACE="informatics"
 # Fetch all pod information in JSON format for the specified namespace
 pods=$(kubectl get pods -n "$NAMESPACE" -o json)
 
-# Fetch all node information in JSON format to get GPU type
-nodes=$(kubectl get nodes -o json)
-
 # Initialize an associative array to store GPU usage per user
 declare -A gpu_usage
 declare -A gpu_types
@@ -29,8 +26,18 @@ while read -r line; do
         # Add the GPU request to the user's total GPU usage
         gpu_usage["$user"]=$((${gpu_usage["$user"]:-0} + gpu_request))
         
-        # Get the GPU type from the node
-        gpu_type=$(echo "$nodes" | jq -r --arg node "$node_name" '.items[] | select(.metadata.name == $node) | .metadata.labels."nvidia.com/gpu.product"')
+        # Get the GPU type from the pod's node labels if available
+        gpu_type=$(echo "$line" | jq -r '.spec.nodeSelector."nvidia.com/gpu.product"')
+        
+        # If GPU type is not found in nodeSelector, try to get it from annotations
+        if [[ "$gpu_type" == "null" ]]; then
+            gpu_type=$(echo "$line" | jq -r '.metadata.annotations."nvidia.com/gpu.product"')
+        fi
+        
+        # If GPU type is still not found, set it to "Unknown"
+        if [[ "$gpu_type" == "null" ]]; then
+            gpu_type="Unknown"
+        fi
         
         # Store the GPU type for the user if not already set
         if [[ -z "${gpu_types[$user]}" ]]; then
@@ -41,6 +48,7 @@ done < <(echo "$pods" | jq -c '.items[]')
 
 # Output the GPU usage per user, sorted by GPU usage in descending order
 echo -e "USER\t\tGPUs\tGPU Type"
-for user in $(printf "%s\n" "${!gpu_usage[@]}" | sort -nr -k2 -t$'\t' -k1,1); do
+for user in $(for u in "${!gpu_usage[@]}"; do echo -e "$u\t${gpu_usage[$u]}"; done | sort -nr -k2); do
+    user=$(echo "$user" | cut -f1)
     echo -e "$user\t\t${gpu_usage[$user]}\t${gpu_types[$user]}"
 done
