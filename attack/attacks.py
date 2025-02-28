@@ -198,7 +198,8 @@ def generate_attack_images(
 
     return image_attack
 
-def perform_pgd_attack(
+
+def perform_di_mim_attack(
     attack_type: str,
     surrogate_decoder: nn.Module,
     decoder: nn.Module,
@@ -207,30 +208,16 @@ def perform_pgd_attack(
     device: torch.device,
     num_steps: int,
     alpha_values: list,
+    momentum: float = 0.8,
     attack_batch_size: int = 10,
+    num_transforms: int = 0,
 ) -> tuple:
-    """
-    Perform PGD attack for different alpha values with gradient comparison.
-
-    Args:
-        surrogate_decoder (nn.Module): Trained surrogate decoder.
-        decoder (nn.Module): Real decoder for scoring.
-        image_attack (torch.Tensor): Images to attack.
-        max_delta (float): Maximum perturbation.
-        device (torch.device): Device for computations.
-        num_steps (int): Number of PGD<|control627|>
-        alpha_values (list): List of step sizes to evaluate.
-        attack_batch_size (int, optional): Batch size for attack. Defaults to 10.
-
-    Returns:
-        tuple: Mean and standard deviation of attack scores.
-    """
     surrogate_decoder.eval()
-    decoder.eval()  # Ensure real decoder is in eval mode
+    decoder.eval()
     for param in surrogate_decoder.parameters():
         param.requires_grad = False
     for param in decoder.parameters():
-        param.requires_grad = False  # No gradients for model parameters
+        param.requires_grad = False
 
     criterion = nn.BCELoss()
 
@@ -240,7 +227,7 @@ def perform_pgd_attack(
     num_attack_batches = (image_attack.size(0) + attack_batch_size - 1) // attack_batch_size
 
     for alpha in alpha_values:
-        logging.info(f"Performing PGD attack with alpha = {alpha}")
+        logging.info(f"Performing DI-MIM attack with alpha = {alpha}, momentum = {momentum}")
         k_attack_scores_alpha = []
 
         for batch_idx in range(num_attack_batches):
@@ -251,38 +238,31 @@ def perform_pgd_attack(
             original_images = image_attack_batch.clone().detach()
             target_labels = torch.ones(image_attack_batch.size(0), 1, device=device)
 
-            # Gradient comparison for the first batch
-            if batch_idx == 0:
-                # Surrogate decoder gradient
-                outputs_surr = surrogate_decoder(image_attack_batch)
-                loss_surr = criterion(outputs_surr, target_labels)
-                loss_surr.backward(retain_graph=True)  # Retain graph for real decoder
-                grad_surr = image_attack_batch.grad.clone().detach()
-                logging.info(f"Surrogate decoder gradient norm: {torch.norm(grad_surr).item():.4f}")
-                logging.info(f"Surrogate decoder gradient (first few elements): {grad_surr.flatten()[:5].tolist()}")
+            velocity = torch.zeros_like(image_attack_batch)
 
-                # Real decoder gradient
-                image_attack_batch.grad.zero_()  # Clear previous gradients
-                outputs_real = decoder(image_attack_batch)
-                loss_real = criterion(outputs_real, target_labels)
-                loss_real.backward()
-                grad_real = image_attack_batch.grad.clone().detach()
-                logging.info(f"Real decoder gradient norm: {torch.norm(grad_real).item():.4f}")
-                logging.info(f"Real decoder gradient (first few elements): {grad_real.flatten()[:5].tolist()}")
-
-                # Reset gradient for PGD steps
-                image_attack_batch.grad.zero_()
-
-            # PGD attack steps
             for step in range(num_steps):
                 if image_attack_batch.grad is not None:
                     image_attack_batch.grad.zero_()
-                outputs = surrogate_decoder(image_attack_batch)
-                loss = criterion(outputs, target_labels)
-                loss.backward()
+
+                # Compute gradients over multiple transformations
+                total_grad = torch.zeros_like(image_attack_batch)
+                for _ in range(num_transforms):
+                    # Random resize (e.g., 90-110% of original size)
+                    scale = torch.rand(1).item() * 0.2 + 0.9  # 0.9 to 1.1
+                    new_size = int(256 * scale)
+                    transformed = F.interpolate(image_attack_batch, size=(new_size, new_size), mode='bilinear', align_corners=False)
+                    transformed = F.interpolate(transformed, size=(256, 256), mode='bilinear', align_corners=False)
+                    transformed.requires_grad = True
+                    
+                    outputs = surrogate_decoder(transformed)
+                    loss = criterion(outputs, target_labels)
+                    loss.backward()
+                    total_grad += transformed.grad
+                    
                 with torch.no_grad():
-                    grad_sign = image_attack_batch.grad.sign()
-                    image_attack_batch = image_attack_batch - alpha * grad_sign  # Perturb towards target
+                    avg_grad = total_grad / num_transforms
+                    velocity = momentum * velocity + avg_grad
+                    image_attack_batch = image_attack_batch + alpha * velocity.sign()
                     image_attack_batch = torch.clamp(
                         image_attack_batch,
                         min=original_images - max_delta,
@@ -290,47 +270,27 @@ def perform_pgd_attack(
                     )
                     image_attack_batch.requires_grad = True
 
-                    # Calculate and log attack score for current step
-                    if step % 20 == 0:  # Log every 100 steps to avoid excessive output
-                        if attack_type in ["base_baseline"]:
-                            k_attack_step = decoder(image_attack_batch)
-                        elif attack_type in ["base_secure", "combined_secure", "fixed_secure"]:
-                            k_mask = generate_mask_secret_key(image_attack_batch.shape, 2024, device=device)
-                            k_attack_step = decoder(mask_image_with_key(image_attack_batch, k_mask))
-                        k_attack_score_step = torch.norm(k_attack_step, dim=1).mean().item()
-                        logging.info(f"Alpha = {alpha}, Batch {batch_idx + 1}, Step {step}/{num_steps}, Attack Score: {k_attack_score_step:.4f}")
-                        del k_attack_step, k_attack_score_step
-                        if attack_type in ["base_secure", "combined_secure", "fixed_secure"]:
-                            del k_mask
-
                 torch.cuda.empty_cache()
-                gc.collect()
 
-            # Mimic the verification API
             with torch.no_grad():
-                if attack_type in ["base_baseline"]:
+                if attack_type == "base_baseline":
                     k_attack_batch = decoder(image_attack_batch)
-                elif attack_type in ["base_secure", "combined_secure", "fixed_secure"]:
+                else:
                     k_mask = generate_mask_secret_key(image_attack_batch.shape, 2024, device=device)
                     k_attack_batch = decoder(mask_image_with_key(image_attack_batch, k_mask))
-                else:
-                    logging.error("attack_type is undefined.")
 
-            k_attack_score_batch = (torch.norm(k_attack_batch, dim=1)).cpu().numpy()
+            k_attack_score_batch = torch.norm(k_attack_batch, dim=1).cpu().numpy()
             k_attack_scores_alpha.extend(k_attack_score_batch)
             logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
 
             del image_attack_batch, target_labels, outputs, loss, k_attack_batch
             torch.cuda.empty_cache()
-            gc.collect()
 
         mean_score = np.mean(k_attack_scores_alpha)
         std_score = np.std(k_attack_scores_alpha)
         k_attack_scores_mean.append(mean_score)
         k_attack_scores_std.append(std_score)
-        logging.info(
-            f"Alpha = {alpha}: k_attack_score mean = {mean_score:.3f}, std = {std_score:.3f}"
-        )
+        logging.info(f"Alpha = {alpha}: k_attack_score mean = {mean_score:.3f}, std = {std_score:.3f}")
 
     return k_attack_scores_mean, k_attack_scores_std
 
