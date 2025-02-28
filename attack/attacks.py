@@ -319,7 +319,7 @@ def fine_tune_surrogate(
 
 def perform_pgd_attack(
     attack_type: str,
-    surrogate_decoder: nn.Module,
+    surrogate_decoders: list,
     decoder: nn.Module,
     image_attack: torch.Tensor,
     max_delta: float,
@@ -328,24 +328,35 @@ def perform_pgd_attack(
     alpha_values: list,
     attack_batch_size: int = 10,
     momentum: float = 0.9,
+    ensemble_weights: list = None,
 ) -> tuple:
     """
-    Perform PGD attack with optional momentum.
+    Perform PGD attack with optional momentum using multiple surrogate decoders.
+    
+    Args:
+        surrogate_decoders: List of surrogate decoder models
+        ensemble_weights: List of weights for each surrogate decoder (default: equal weights)
     """
-    surrogate_decoder.eval()
+    for surrogate_decoder in surrogate_decoders:
+        surrogate_decoder.eval()
+        for param in surrogate_decoder.parameters():
+            param.requires_grad = False
+    
     decoder.eval()
-    for param in surrogate_decoder.parameters():
-        param.requires_grad = False
     for param in decoder.parameters():
         param.requires_grad = False
 
+    # Initialize ensemble weights if not provided
+    if ensemble_weights is None:
+        ensemble_weights = [1.0 / len(surrogate_decoders)] * len(surrogate_decoders)
+    
     criterion = nn.BCELoss()
     k_attack_scores_mean = []
     k_attack_scores_std = []
     num_attack_batches = (image_attack.size(0) + attack_batch_size - 1) // attack_batch_size
 
     for alpha in alpha_values:
-        logging.info(f"Performing PGD attack with alpha = {alpha}, momentum = {momentum}")
+        logging.info(f"Performing ensemble PGD attack with alpha = {alpha}, momentum = {momentum}")
         k_attack_scores_alpha = []
 
         for batch_idx in range(num_attack_batches):
@@ -361,12 +372,18 @@ def perform_pgd_attack(
             for step in range(num_steps):
                 if image_attack_batch.grad is not None:
                     image_attack_batch.grad.zero_()
-                outputs = surrogate_decoder(image_attack_batch)
-                loss = criterion(outputs, target_labels)
-                loss.backward()
+                
+                # Compute weighted ensemble gradient
+                ensemble_grad = torch.zeros_like(image_attack_batch)
+                for surrogate_decoder, weight in zip(surrogate_decoders, ensemble_weights):
+                    outputs = surrogate_decoder(image_attack_batch)
+                    loss = criterion(outputs, target_labels)
+                    loss.backward(retain_graph=True)
+                    ensemble_grad += weight * image_attack_batch.grad.clone()
+                    image_attack_batch.grad.zero_()
+
                 with torch.no_grad():
-                    grad = image_attack_batch.grad.detach()
-                    momentum_buffer = momentum * momentum_buffer + grad / torch.norm(grad, p=1)
+                    momentum_buffer = momentum * momentum_buffer + ensemble_grad / torch.norm(ensemble_grad, p=1)
                     image_attack_batch = image_attack_batch - alpha * momentum_buffer.sign()
                     image_attack_batch = torch.clamp(
                         image_attack_batch,
@@ -386,16 +403,19 @@ def perform_pgd_attack(
                     k_attack_batch = decoder(mask_image_with_key(image_attack_batch, k_mask))
                 else:
                     logging.error("attack_type is undefined.")
+                
                 # Log surrogate and real decoder outputs for diagnostics
-                surr_output = surrogate_decoder(image_attack_batch)
-                logging.info(f"Batch {batch_idx + 1}, Surrogate output mean: {surr_output.mean().item():.3f}")
+                ensemble_output = torch.zeros_like(surrogate_decoders[0](image_attack_batch))
+                for surrogate_decoder, weight in zip(surrogate_decoders, ensemble_weights):
+                    ensemble_output += weight * surrogate_decoder(image_attack_batch)
+                logging.info(f"Batch {batch_idx + 1}, Ensemble output mean: {ensemble_output.mean().item():.3f}")
                 logging.info(f"Batch {batch_idx + 1}, Real output mean: {k_attack_batch.mean().item():.3f}")
 
             k_attack_score_batch = torch.norm(k_attack_batch, dim=1).cpu().numpy()
             k_attack_scores_alpha.extend(k_attack_score_batch)
             logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
 
-            del image_attack_batch, target_labels, outputs, loss, k_attack_batch, momentum_buffer, surr_output
+            del image_attack_batch, target_labels, ensemble_output, k_attack_batch, momentum_buffer
             torch.cuda.empty_cache()
             gc.collect()
 
@@ -413,7 +433,7 @@ def attack_label_based(
     watermarked_model: nn.Module,
     max_delta: float,
     decoder: nn.Module,
-    surrogate_decoder: nn.Module,
+    surrogate_decoders: list,
     latent_dim: int,
     device: torch.device,
     train_size: int,
@@ -458,46 +478,48 @@ def attack_label_based(
     )
     logging.info("Initialized image_attack.")
 
-    # Train surrogate decoder if specified
+    # Train surrogate decoders if specified
     if train_surrogate:
-        train_surrogate_decoder(
-            attack_type=attack_type,
-            surrogate_decoder=surrogate_decoder,
-            gan_model=gan_model,
-            watermarked_model=watermarked_model,
-            max_delta=max_delta,
-            latent_dim=latent_dim,
-            device=device,
-            train_size=train_size,
-            epochs=epochs,
-            batch_size=batch_size,
-            rank=rank,
-            world_size=world_size,
-        )
-        if rank == 0:
-            logging.info("Training of surrogate decoder completed.")
+        for i, surrogate_decoder in enumerate(surrogate_decoders):
+            train_surrogate_decoder(
+                attack_type=attack_type,
+                surrogate_decoder=surrogate_decoder,
+                gan_model=gan_model,
+                watermarked_model=watermarked_model,
+                max_delta=max_delta,
+                latent_dim=latent_dim,
+                device=device,
+                train_size=train_size,
+                epochs=epochs,
+                batch_size=batch_size,
+                rank=rank,
+                world_size=world_size,
+            )
+            if rank == 0:
+                logging.info(f"Training of surrogate decoder {i + 1} completed.")
     else:
         if rank == 0:
-            logging.info("Using pre-trained surrogate decoder.")
+            logging.info("Using pre-trained surrogate decoders.")
 
-    # Fine-tune surrogate if specified
+    # Fine-tune surrogate decoders if specified
     if finetune_surrogate and rank == 0:
-        surrogate_decoder = fine_tune_surrogate(
-            surrogate_decoder=surrogate_decoder,
-            decoder=decoder,
-            images=image_attack,
-            device=device,
-            epochs=20,  # Adjustable
-            batch_size=batch_size,
-            rank=rank
-        )
-        logging.info("Surrogate decoder fine-tuned with real decoder outputs.")
+        for i, surrogate_decoder in enumerate(surrogate_decoders):
+            surrogate_decoder = fine_tune_surrogate(
+                surrogate_decoder=surrogate_decoder,
+                decoder=decoder,
+                images=image_attack,
+                device=device,
+                epochs=20,  # Adjustable
+                batch_size=batch_size,
+                rank=rank
+            )
+            logging.info(f"Surrogate decoder {i + 1} fine-tuned with real decoder outputs.")
 
     # Perform PGD attack
     if rank == 0:
         k_attack_scores_mean, k_attack_scores_std = perform_pgd_attack(
             attack_type=attack_type,
-            surrogate_decoder=surrogate_decoder,
+            surrogate_decoders=surrogate_decoders,
             decoder=decoder,
             image_attack=image_attack,
             max_delta=max_delta,

@@ -62,7 +62,7 @@ def main():
     parser.add_argument("--attack_image_type", type=str, default="original_image", choices=["original_image", "random_image"], help="Type of images to use for attack")
     parser.add_argument("--train_size", type=int, default=100000, help="training set size for training surrogate decoder")
     parser.add_argument("--image_attack_size", type=int, default=10000, help="size of attack image set")
-    parser.add_argument("--surrogate_decoder_model_path", type=str, default=None, help="Path to pre-trained surrogate decoder model")
+    parser.add_argument("--surrogate_decoder_model_paths", type=str, help="Comma-separated list of paths to pre-trained surrogate decoder models")
     parser.add_argument("--batch_size_surr", type=int, default=16, help="Batch size for training the surrogate decoder")
     parser.add_argument("--num_steps_pgd", type=int, default=1000, help="Number of steps during the attack")
     parser.add_argument("--alpha_values_pgd", type=str, default="0.1,0.5,1.0", help="Alpha values for the attack (comma-separated list of floats)")
@@ -235,11 +235,13 @@ def main():
     elif args.mode == "attack":
         local_path = args.stylegan2_url.split('/')[-1]
 
-        # Check if a pre-trained surrogate decoder path is provided
-        if args.surrogate_decoder_model_path is not None:
+        # Check if pre-trained surrogate decoder paths are provided
+        if args.surrogate_decoder_model_paths is not None:
             train_surrogate = False
+            surrogate_paths = args.surrogate_decoder_model_paths.split(',')
         else:
             train_surrogate = True
+            surrogate_paths = [None]  # Will create one surrogate decoder
 
         # Convert alpha_values string to a vector of values
         args.alpha_values_pgd = [float(x) for x in args.alpha_values_pgd.split(',')]
@@ -275,56 +277,66 @@ def main():
         decoder.load_state_dict(torch.load(args.decoder_model_path))
         decoder = decoder.to(device)
 
-        if args.attack_type in ["base_baseline", "base_secure"]:
-            surrogate_decoder = FlexibleDecoder(
-                args.num_conv_layers_surr,
-                args.num_pool_layers_surr,
-                args.initial_channels_surr,
-            ).to(device)
-        elif args.attack_type in ["combined_secure"]:
-            surrogate_decoder = CombinedModel(
-                input_channels=3,
-                decoder_total_conv_layers=args.num_conv_layers_surr,
-                decoder_total_pool_layers=args.num_pool_layers_surr,
-                decoder_initial_channels=args.initial_channels_surr,
-                cnn_instance=None,
-                cnn_mode="fresh",
-            ).to(device)
-        elif args.attack_type in ["fixed_secure"]:
-            from key.key import generate_mask_secret_key
-            mask_cnn = generate_mask_secret_key(
-                image_shape=(1, 3, 256, 256),
-                seed=2024,
-                device=device,
-            )
-            surrogate_decoder = CombinedModel(
-                input_channels=3,
-                decoder_total_conv_layers=args.num_conv_layers_surr,
-                decoder_total_pool_layers=args.num_pool_layers_surr,
-                decoder_initial_channels=args.initial_channels_surr,
-                cnn_instance=mask_cnn,
-                cnn_mode="fixed",
-            ).to(device)
+        # Initialize list to store surrogate decoders
+        surrogate_decoders = []
 
-        # Wrap surrogate_decoder with DDP if training
-        if train_surrogate:
-            surrogate_decoder = torch.nn.parallel.DistributedDataParallel(
-                surrogate_decoder,
-                device_ids=[args.local_rank],
-                output_device=args.local_rank
-            )
+        # Create or load surrogate decoders
+        for surrogate_path in surrogate_paths:
+            if args.attack_type in ["base_baseline", "base_secure"]:
+                surrogate_decoder = FlexibleDecoder(
+                    args.num_conv_layers_surr,
+                    args.num_pool_layers_surr,
+                    args.initial_channels_surr,
+                ).to(device)
+            elif args.attack_type in ["combined_secure"]:
+                surrogate_decoder = CombinedModel(
+                    input_channels=3,
+                    decoder_total_conv_layers=args.num_conv_layers_surr,
+                    decoder_total_pool_layers=args.num_pool_layers_surr,
+                    decoder_initial_channels=args.initial_channels_surr,
+                    cnn_instance=None,
+                    cnn_mode="fresh",
+                ).to(device)
+            elif args.attack_type in ["fixed_secure"]:
+                from key.key import generate_mask_secret_key
+                mask_cnn = generate_mask_secret_key(
+                    image_shape=(1, 3, 256, 256),
+                    seed=2024,
+                    device=device,
+                )
+                surrogate_decoder = CombinedModel(
+                    input_channels=3,
+                    decoder_total_conv_layers=args.num_conv_layers_surr,
+                    decoder_total_pool_layers=args.num_pool_layers_surr,
+                    decoder_initial_channels=args.initial_channels_surr,
+                    cnn_instance=mask_cnn,
+                    cnn_mode="fixed",
+                ).to(device)
 
-        # Check if a pre-trained surrogate decoder path is provided
-        if train_surrogate:
-            logging.info("Training surrogate decoder from scratch.")
-        else:
-            logging.info(f"Loading pre-trained surrogate decoder from {args.surrogate_decoder_model_path}")
-            state_dict = torch.load(args.surrogate_decoder_model_path, map_location=device)
-            # If DDP is active, load into the module
+            # Wrap surrogate_decoder with DDP if training
             if train_surrogate:
-                surrogate_decoder.module.load_state_dict(state_dict)
-            else:
-                surrogate_decoder.load_state_dict(state_dict)
+                surrogate_decoder = torch.nn.parallel.DistributedDataParallel(
+                    surrogate_decoder,
+                    device_ids=[args.local_rank],
+                    output_device=args.local_rank
+                )
+
+            # Load pre-trained weights if provided
+            if surrogate_path is not None:
+                logging.info(f"Loading pre-trained surrogate decoder from {surrogate_path}")
+                state_dict = torch.load(surrogate_path, map_location=device)
+                # If DDP is active, load into the module
+                if train_surrogate:
+                    surrogate_decoder.module.load_state_dict(state_dict)
+                else:
+                    surrogate_decoder.load_state_dict(state_dict)
+
+            surrogate_decoders.append(surrogate_decoder)
+
+        if train_surrogate:
+            logging.info(f"Training {len(surrogate_decoders)} surrogate decoder(s) from scratch.")
+        else:
+            logging.info(f"Using {len(surrogate_decoders)} pre-trained surrogate decoder(s).")
 
         attack_label_based(
             args.attack_type,
@@ -332,7 +344,7 @@ def main():
             watermarked_model,
             args.max_delta,
             decoder,
-            surrogate_decoder,
+            surrogate_decoders,  # Now passing list of decoders
             latent_dim,
             device,
             args.train_size,
