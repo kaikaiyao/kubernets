@@ -11,6 +11,7 @@ from utils.file_utils import generate_time_based_string
 from key.key import generate_mask_secret_key, mask_image_with_key
 import torch.distributed as dist
 import torch.nn.functional as F
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 def train_surrogate_decoder(
     attack_type: str,
@@ -230,7 +231,7 @@ def fine_tune_surrogate(
     
     # Use a smaller learning rate and weight decay
     optimizer = torch.optim.Adam(surrogate_decoder.parameters(), lr=0.001, weight_decay=1e-5)
-    scheduler = torch.optim.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
 
     num_batches = (images.size(0) + batch_size - 1) // batch_size
     best_loss = float('inf')
