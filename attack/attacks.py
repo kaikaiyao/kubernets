@@ -194,10 +194,11 @@ def generate_initial_perturbations(
     images: torch.Tensor,
     device: torch.device,
     num_steps: int = 100,
-    alpha: float = 0.05,
-    max_delta: float = 2.0
+    alpha: float = 0.1,  # Increased step size
+    max_delta: float = 2.0,
+    early_stop_threshold: float = 1e-6  # Add early stopping
 ) -> tuple:
-    """Generate perturbed images using basic PGD for fine-tuning.
+    """Generate perturbed images using enhanced PGD for fine-tuning.
     
     Args:
         surrogate_decoder: The surrogate decoder model
@@ -207,57 +208,78 @@ def generate_initial_perturbations(
         num_steps: Number of PGD steps
         alpha: Step size for PGD
         max_delta: Maximum perturbation size
+        early_stop_threshold: Threshold for early stopping
         
     Returns:
         tuple: (perturbed_images, k_scores_orig, k_scores_pert)
-            - perturbed_images: The perturbed version of input images
-            - k_scores_orig: Norm of real decoder's output on original images
-            - k_scores_pert: Norm of real decoder's output on perturbed images
     """
     surrogate_decoder.eval()
     decoder.eval()
     images = images.clone().detach().to(device)
     images.requires_grad = True
     original_images = images.clone().detach()
-    criterion = nn.BCELoss()
-    target_labels = torch.ones(images.size(0), 1, device=device)
     
     # Get initial k_scores from real decoder
     with torch.no_grad():
         k_orig = decoder(original_images)
         k_scores_orig = torch.norm(k_orig, dim=1)
+        initial_direction = F.normalize(k_orig.view(k_orig.size(0), -1), dim=1)
 
     best_perturbation = None
     best_k_scores = None
     min_k_score = float('inf')
+    prev_k_score = float('inf')
+    plateau_count = 0
 
     for step in range(num_steps):
         if images.grad is not None:
             images.grad.zero_()
         
-        # Get surrogate decoder's output and compute loss
-        outputs = surrogate_decoder(images)
-        loss = criterion(outputs, target_labels)
+        # Get surrogate decoder's output
+        k_surrogate = surrogate_decoder(images)
+        
+        # Maximize norm difference and direction change
+        with torch.no_grad():
+            k_real = decoder(images)
+            current_direction = F.normalize(k_real.view(k_real.size(0), -1), dim=1)
+            direction_similarity = F.cosine_similarity(current_direction, initial_direction, dim=1)
+        
+        # Combined loss to maximize norm and direction changes
+        loss = -(torch.norm(k_surrogate, dim=1).mean() + (1 - direction_similarity).mean())
         loss.backward()
         
         with torch.no_grad():
-            # Update images with PGD step
-            images = images - alpha * images.grad.sign()
+            # Normalize gradients
+            grad_norm = torch.norm(images.grad.view(images.size(0), -1), dim=1).view(-1, 1, 1, 1).clamp(min=1e-8)
+            normalized_grad = images.grad / grad_norm
+            
+            # Update images with normalized gradient
+            images = images - alpha * normalized_grad
+            
             # Project back to valid perturbation range
             images = torch.clamp(images, original_images - max_delta, original_images + max_delta)
-            images = torch.clamp(images, -1, 1)  # Ensure valid image range
+            images = torch.clamp(images, -1, 1)
             images.requires_grad = True
             
             # Evaluate real decoder's output
             k_pert = decoder(images)
             k_scores_pert = torch.norm(k_pert, dim=1)
             
-            # Keep track of best perturbation (one that minimizes k_scores)
-            current_min = k_scores_pert.mean().item()
-            if current_min < min_k_score:
-                min_k_score = current_min
+            # Keep track of best perturbation
+            current_k_score = k_scores_pert.mean().item()
+            if current_k_score < min_k_score:
+                min_k_score = current_k_score
                 best_perturbation = images.clone().detach()
                 best_k_scores = k_scores_pert.clone().detach()
+            
+            # Early stopping check
+            if abs(current_k_score - prev_k_score) < early_stop_threshold:
+                plateau_count += 1
+                if plateau_count >= 5:  # Stop if plateaued for 5 steps
+                    break
+            else:
+                plateau_count = 0
+            prev_k_score = current_k_score
             
             if step % 10 == 0:
                 logging.info(
@@ -266,10 +288,10 @@ def generate_initial_perturbations(
                     f"[{k_scores_orig.min().item():.4f}, {k_scores_orig.max().item():.4f}], "
                     f"Perturbed k_scores: {k_scores_pert.mean().item():.4f} "
                     f"[{k_scores_pert.min().item():.4f}, {k_scores_pert.max().item():.4f}], "
+                    f"Direction Change: {(1 - direction_similarity).mean().item():.4f}, "
                     f"Best k_score so far: {min_k_score:.4f}"
                 )
 
-    # Return the best perturbation found
     return best_perturbation, k_scores_orig, best_k_scores
 
 def fine_tune_surrogate(
@@ -283,15 +305,17 @@ def fine_tune_surrogate(
 ) -> nn.Module:
     """Fine-tune surrogate on perturbed images labeled by real decoder to match output patterns."""
     surrogate_decoder.train()
-    decoder.eval()  # Ensure decoder is in eval mode
+    decoder.eval()
     
-    # Use a smaller learning rate and weight decay
-    optimizer = torch.optim.Adam(surrogate_decoder.parameters(), lr=0.0001, weight_decay=1e-4)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
+    # Use a larger learning rate and stronger regularization
+    optimizer = torch.optim.Adam(surrogate_decoder.parameters(), lr=0.001, weight_decay=1e-3)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True)
 
     num_batches = (images.size(0) + batch_size - 1) // batch_size
     best_loss = float('inf')
     best_model_state = None
+    running_mean_norm = 0.0
+    running_mean_count = 0
 
     for epoch in range(epochs):
         epoch_loss = 0.0
@@ -302,15 +326,14 @@ def fine_tune_surrogate(
             end = min((i + 1) * batch_size, images.size(0))
             batch = images[start:end].to(device)
             
-            # Generate perturbed images with smaller perturbation initially
-            alpha = 0.05  # Fixed alpha for stability
+            # Generate perturbed images
             perturbed_batch, k_scores_orig, k_scores_pert = generate_initial_perturbations(
                 surrogate_decoder=surrogate_decoder,
                 decoder=decoder,
                 images=batch,
                 device=device,
-                num_steps=50,  # Reduced steps
-                alpha=alpha,
+                num_steps=50,
+                alpha=0.1,
                 max_delta=2.0
             )
             
@@ -319,46 +342,41 @@ def fine_tune_surrogate(
                 k_real = decoder(perturbed_batch)
                 k_real_orig = decoder(batch)
                 
-                # Get real decoder's norm differences for scaling
-                d_k_real = torch.norm(k_real, dim=1)
-                d_k_real_orig = torch.norm(k_real_orig, dim=1)
-                real_norm_diff = d_k_real_orig - d_k_real
-                
-                # Normalize real outputs for direction matching
+                # Normalize real decoder outputs
                 k_real_norm = F.normalize(k_real.view(k_real.size(0), -1), dim=1)
                 k_real_orig_norm = F.normalize(k_real_orig.view(k_real_orig.size(0), -1), dim=1)
+                
+                # Update running mean of real decoder norms
+                batch_mean_norm = (torch.norm(k_real, dim=1).mean() + torch.norm(k_real_orig, dim=1).mean()) / 2
+                running_mean_norm = (running_mean_norm * running_mean_count + batch_mean_norm.item()) / (running_mean_count + 1)
+                running_mean_count += 1
             
             # Get surrogate outputs
             k_surrogate = surrogate_decoder(perturbed_batch)
             k_surrogate_orig = surrogate_decoder(batch)
             
-            # Calculate surrogate norms and differences
-            d_k_surrogate = torch.norm(k_surrogate, dim=1)
-            d_k_surrogate_orig = torch.norm(k_surrogate_orig, dim=1)
-            surrogate_norm_diff = d_k_surrogate_orig - d_k_surrogate
-            
-            # Normalize surrogate outputs for direction matching
+            # Normalize surrogate outputs
             k_surrogate_norm = F.normalize(k_surrogate.view(k_surrogate.size(0), -1), dim=1)
             k_surrogate_orig_norm = F.normalize(k_surrogate_orig.view(k_surrogate_orig.size(0), -1), dim=1)
             
-            # Loss components
-            # 1. Norm difference matching loss (using the original training objective)
-            norm_diff_loss = ((surrogate_norm_diff - real_norm_diff).max() + 1) ** 2
+            # 1. Direction alignment loss with stronger weight
+            direction_loss = (1 - F.cosine_similarity(k_real_norm, k_surrogate_norm, dim=1)).mean() + \
+                           (1 - F.cosine_similarity(k_real_orig_norm, k_surrogate_orig_norm, dim=1)).mean()
             
-            # 2. Direction alignment loss
-            direction_loss = (1 - F.cosine_similarity(k_real_orig_norm, k_surrogate_orig_norm, dim=1).mean() +
-                            1 - F.cosine_similarity(k_real_norm, k_surrogate_norm, dim=1).mean())
+            # 2. Scale matching loss using running mean
+            scale_loss = F.mse_loss(torch.norm(k_surrogate, dim=1), torch.norm(k_real, dim=1)) + \
+                        F.mse_loss(torch.norm(k_surrogate_orig, dim=1), torch.norm(k_real_orig, dim=1))
             
-            # 3. Scale matching loss to ensure similar output magnitudes
-            scale_loss = F.mse_loss(d_k_surrogate, d_k_real) + F.mse_loss(d_k_surrogate_orig, d_k_real_orig)
+            # 3. Feature matching loss
+            feature_loss = F.mse_loss(k_surrogate, k_real) + F.mse_loss(k_surrogate_orig, k_real_orig)
             
-            # Combined loss with fixed weights
-            loss = norm_diff_loss + 0.1 * direction_loss + 0.01 * scale_loss
+            # Combined loss with dynamic weighting
+            loss = direction_loss + 0.1 * scale_loss + 0.01 * feature_loss
             
             optimizer.zero_grad()
             loss.backward()
             
-            # Gradient clipping with smaller max norm
+            # Gradient clipping
             torch.nn.utils.clip_grad_norm_(surrogate_decoder.parameters(), max_norm=1.0)
             
             optimizer.step()
@@ -370,19 +388,18 @@ def fine_tune_surrogate(
                 logging.info(
                     f"Fine-tune Epoch {epoch+1}, Batch {i+1}/{num_batches}, "
                     f"Total Loss: {loss.item():.4f}, "
-                    f"Norm Diff Loss: {norm_diff_loss.item():.4f}, "
                     f"Direction Loss: {direction_loss.item():.4f}, "
                     f"Scale Loss: {scale_loss.item():.4f}, "
-                    f"Real Norm Diff: {real_norm_diff.mean().item():.4f}, "
-                    f"Surrogate Norm Diff: {surrogate_norm_diff.mean().item():.4f}, "
-                    f"Real Norm Range: [{d_k_real.min().item():.4f}, {d_k_real.max().item():.4f}], "
-                    f"Surrogate Norm Range: [{d_k_surrogate.min().item():.4f}, {d_k_surrogate.max().item():.4f}], "
-                    f"PGD k_scores - Original: {k_scores_orig.mean().item():.4f}, Perturbed: {k_scores_pert.mean().item():.4f}"
+                    f"Feature Loss: {feature_loss.item():.4f}, "
+                    f"Real Norm Mean: {batch_mean_norm.item():.4f}, "
+                    f"Running Mean Norm: {running_mean_norm:.4f}, "
+                    f"Surrogate Norm Range: [{torch.norm(k_surrogate, dim=1).min().item():.4f}, "
+                    f"{torch.norm(k_surrogate, dim=1).max().item():.4f}], "
+                    f"PGD k_scores - Original: {k_scores_orig.mean().item():.4f}, "
+                    f"Perturbed: {k_scores_pert.mean().item():.4f}"
                 )
 
             del batch, perturbed_batch, k_real, k_real_orig, k_surrogate, k_surrogate_orig
-            del d_k_real, d_k_real_orig, d_k_surrogate, d_k_surrogate_orig
-            del real_norm_diff, surrogate_norm_diff, loss
             torch.cuda.empty_cache()
             gc.collect()
 
@@ -393,10 +410,8 @@ def fine_tune_surrogate(
                 f"Average Loss: {avg_epoch_loss:.4f}"
             )
         
-        # Learning rate scheduling based on average loss
         scheduler.step(avg_epoch_loss)
         
-        # Save best model
         if avg_epoch_loss < best_loss:
             best_loss = avg_epoch_loss
             best_model_state = surrogate_decoder.state_dict().copy()
