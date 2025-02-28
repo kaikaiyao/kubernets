@@ -1,62 +1,28 @@
 #!/bin/bash
 
-kubectl describe pods | awk '
-BEGIN {
-    RS = "";  # Split input into pod blocks separated by blank lines
-    FS = "\n";
-}
+# Fetch all pod information in JSON format
+pods=$(kubectl get pods --all-namespaces -o json)
 
-{
-    status = "";
-    user = "";
-    gpus = 0;
-    in_limits = 0;
+# Initialize an associative array to store GPU usage per user
+declare -A gpu_usage
 
-    for (i = 1; i <= NF; i++) {
-        line = $i;
+# Parse the JSON output
+while read -r line; do
+    # Extract the user label
+    user=$(echo "$line" | jq -r '.metadata.labels."eidf/user"')
+    
+    # Extract the GPU request
+    gpu_request=$(echo "$line" | jq -r '.spec.containers[].resources.requests."nvidia\.com/gpu"')
+    
+    # Check if both user and gpu_request are not null
+    if [[ "$user" != "null" && "$gpu_request" != "null" ]]; then
+        # Add the GPU request to the user's total GPU usage
+        gpu_usage["$user"]=$((${gpu_usage["$user"]:-0} + gpu_request))
+    fi
+done < <(echo "$pods" | jq -c '.items[]')
 
-        # Check if the pod is Running
-        if (line ~ /^Status:[[:space:]]+Running/) {
-            status = "Running";
-        }
-
-        # Extract user from Labels
-        if (line ~ /Labels:/) {
-            split(line, lbl_parts, "eidf/user=");
-            if (length(lbl_parts) >= 2) {
-                split(lbl_parts[2], user_part, /[, ]/);
-                user = user_part[1];
-            }
-        }
-
-        # Track if we are in the Limits section
-        if (line ~ /Limits:/) {
-            in_limits = 1;
-        }
-        if (line ~ /Requests:/) {
-            in_limits = 0;
-        }
-
-        # Extract GPU count from Limits
-        if (in_limits && line ~ /nvidia.com\/gpu:/) {
-            split(line, gpu_parts, /nvidia.com\/gpu:[[:space:]]+/);
-            if (length(gpu_parts) >= 2) {
-                gpu_num = gpu_parts[2] + 0;
-                gpus += gpu_num;
-            }
-        }
-    }
-
-    # Accumulate GPUs per user if pod is running and user is found
-    if (status == "Running" && user != "") {
-        total_gpus[user] += gpus;
-    }
-}
-
-END {
-    # Print results
-    printf "%-20s %s\n", "USER", "GPUs";
-    for (user in total_gpus) {
-        printf "%-20s %d\n", user, total_gpus[user];
-    }
-}'
+# Output the GPU usage per user
+echo "GPU Usage per User:"
+for user in "${!gpu_usage[@]}"; do
+    echo "User: $user, GPU Usage: ${gpu_usage[$user]}"
+done
