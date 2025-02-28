@@ -284,7 +284,7 @@ def perform_pgd_attack(
             k_attack_scores_alpha.extend(k_attack_score_batch)
             logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
 
-            del image_attack_batch, target_labels, loss, k_attack_batch
+            del image_attack_batch, target_labels, outputs, loss, k_attack_batch
             torch.cuda.empty_cache()
 
         mean_score = np.mean(k_attack_scores_alpha)
