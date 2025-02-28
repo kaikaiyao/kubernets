@@ -66,7 +66,6 @@ spec:
                       --image_attack_size 1000 \
                       --num_steps_pgd 100 \
                       --surrogate_decoder_model_path '/nfs-user/data/baseline/surrogate_decoder_0.pt' \
-                      --finetune_surrogate \
                       --attack_image_type "original_image" \
                       --alpha_values_pgd "0.05,0.01"
               exit_status=$?
