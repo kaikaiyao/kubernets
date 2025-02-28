@@ -193,32 +193,34 @@ def fine_tune_surrogate(
     batch_size: int = 16,
     rank: int = 0
 ) -> nn.Module:
-    """Fine-tune surrogate on perturbed images labeled by real decoder to minimize the norm difference."""
-    perturbed_images = generate_initial_perturbations(
-        surrogate_decoder=surrogate_decoder,
-        images=images,
-        device=device,
-        num_steps=100,
-        alpha=0.05,
-        max_delta=2.0
-    )
+    """Fine-tune surrogate on perturbed images labeled by real decoder to minimize the norm difference, generating images on-the-fly."""
     surrogate_decoder.train()
     optimizer = torch.optim.Adagrad(surrogate_decoder.parameters(), lr=0.0001)
 
-    num_batches = (perturbed_images.size(0) + batch_size - 1) // batch_size
+    num_batches = (images.size(0) + batch_size - 1) // batch_size
     for epoch in range(epochs):
         epoch_loss = 0.0
         num_samples = 0
 
         for i in range(num_batches):
             start = i * batch_size
-            end = min((i + 1) * batch_size, perturbed_images.size(0))
-            batch = perturbed_images[start:end]
+            end = min((i + 1) * batch_size, images.size(0))
+            batch = images[start:end]
+            
+            # Generate perturbed images on-the-fly
+            perturbed_batch = generate_initial_perturbations(
+                surrogate_decoder=surrogate_decoder,
+                images=batch,
+                device=device,
+                num_steps=100,
+                alpha=0.05,
+                max_delta=2.0
+            )
             
             # Get outputs from both decoders
             with torch.no_grad():
-                k_real = decoder(batch)
-            k_surrogate = surrogate_decoder(batch)
+                k_real = decoder(perturbed_batch)
+            k_surrogate = surrogate_decoder(perturbed_batch)
             
             # Calculate norms and norm difference
             d_k_real = torch.norm(k_real, dim=1)
