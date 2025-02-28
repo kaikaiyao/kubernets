@@ -191,9 +191,9 @@ def generate_initial_perturbations(
     surrogate_decoder: nn.Module,
     images: torch.Tensor,
     device: torch.device,
-    num_steps: int = 40,
-    alpha: float = 0.01,
-    max_delta: float = 0.05
+    num_steps: int = 200,
+    alpha: float = 0.05,
+    max_delta: float = 2.0
 ) -> torch.Tensor:
     """Generate perturbed images using basic PGD for fine-tuning."""
     surrogate_decoder.eval()
@@ -247,7 +247,7 @@ def fine_tune_surrogate(
                 surrogate_decoder=surrogate_decoder,
                 images=batch,
                 device=device,
-                num_steps=50,
+                num_steps=200,
                 alpha=0.05,
                 max_delta=2.0
             )
@@ -255,23 +255,35 @@ def fine_tune_surrogate(
             # Get outputs from both decoders
             with torch.no_grad():
                 k_real = decoder(perturbed_batch)
+                k_real_orig = decoder(batch)
             k_surrogate = surrogate_decoder(perturbed_batch)
+            k_surrogate_orig = surrogate_decoder(batch)
             
-            # Calculate cosine similarity between real and surrogate outputs
-            cos_sim = F.cosine_similarity(k_real.view(k_real.size(0), -1),
-                                        k_surrogate.view(k_surrogate.size(0), -1),
-                                        dim=1)
-            
-            # Calculate norms for monitoring
+            # Calculate norms
             d_k_real = torch.norm(k_real, dim=1)
+            d_k_real_orig = torch.norm(k_real_orig, dim=1)
             d_k_surrogate = torch.norm(k_surrogate, dim=1)
+            d_k_surrogate_orig = torch.norm(k_surrogate_orig, dim=1)
             
-            # Loss is negative cosine similarity (to maximize similarity)
-            # plus L1 loss on the norm differences
-            cos_loss = -cos_sim.mean()
-            norm_loss = F.l1_loss(d_k_surrogate, d_k_real)
-            loss = cos_loss + 0.1 * norm_loss
-
+            # Compute norm differences
+            real_norm_diff = d_k_real_orig - d_k_real
+            surrogate_norm_diff = d_k_surrogate_orig - d_k_surrogate
+            
+            # MSE loss on the norm differences to match the behavior
+            norm_diff_loss = F.mse_loss(surrogate_norm_diff, real_norm_diff)
+            
+            # Direction alignment loss using cosine similarity
+            cos_sim_orig = F.cosine_similarity(k_real_orig.view(k_real_orig.size(0), -1),
+                                             k_surrogate_orig.view(k_surrogate_orig.size(0), -1),
+                                             dim=1)
+            cos_sim_pert = F.cosine_similarity(k_real.view(k_real.size(0), -1),
+                                             k_surrogate.view(k_surrogate.size(0), -1),
+                                             dim=1)
+            direction_loss = -cos_sim_orig.mean() - cos_sim_pert.mean()
+            
+            # Combined loss with dynamic weighting
+            loss = norm_diff_loss + 0.5 * direction_loss
+            
             optimizer.zero_grad()
             loss.backward()
             
@@ -286,12 +298,17 @@ def fine_tune_surrogate(
             if rank == 0 and i % 10 == 0:
                 logging.info(
                     f"Fine-tune Epoch {epoch+1}, Batch {i+1}/{num_batches}, "
-                    f"Loss: {loss.item():.4f}, Cos Loss: {cos_loss.item():.4f}, "
-                    f"Norm Loss: {norm_loss.item():.4f}, "
-                    f"Cos Sim: {cos_sim.mean().item():.4f}, "
-                    f"d_k_real range: [{d_k_real.min().item():.4f}, {d_k_real.max().item():.4f}], "
-                    f"d_k_surrogate range: [{d_k_surrogate.min().item():.4f}, {d_k_surrogate.max().item():.4f}]"
+                    f"Loss: {loss.item():.4f}, Norm Diff Loss: {norm_diff_loss.item():.4f}, "
+                    f"Direction Loss: {direction_loss.item():.4f}, "
+                    f"Real Norm Diff: {real_norm_diff.mean().item():.4f}, "
+                    f"Surrogate Norm Diff: {surrogate_norm_diff.mean().item():.4f}"
                 )
+
+            del batch, perturbed_batch, k_real, k_real_orig, k_surrogate, k_surrogate_orig
+            del d_k_real, d_k_real_orig, d_k_surrogate, d_k_surrogate_orig
+            del real_norm_diff, surrogate_norm_diff, loss
+            torch.cuda.empty_cache()
+            gc.collect()
 
         avg_epoch_loss = epoch_loss / num_samples
         if rank == 0:
