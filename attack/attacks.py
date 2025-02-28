@@ -33,10 +33,7 @@ def train_surrogate_decoder(
     if rank == 0:
         logging.info(f"time_string = {time_string}")
 
-    # Set random seed based on rank for different data generation across GPUs
     torch.manual_seed(2024 + rank)
-
-    # Move models to device and set to appropriate modes
     surrogate_decoder.train()
     surrogate_decoder.to(device)
     gan_model.eval()
@@ -44,13 +41,8 @@ def train_surrogate_decoder(
     watermarked_model.eval()
     watermarked_model.to(device)
 
-    # Define optimizer
     optimizer = torch.optim.Adagrad(surrogate_decoder.parameters(), lr=0.0001)
-
-    # Check if GAN model is StyleGAN2
     is_stylegan2_model = is_stylegan2(gan_model)
-
-    # Calculate number of batches (ceiling division) per GPU
     num_batches = (train_size + batch_size - 1) // batch_size
 
     for epoch in range(epochs):
@@ -59,62 +51,45 @@ def train_surrogate_decoder(
         num_samples = 0
 
         for batch_idx in range(num_batches):
-            # Generate batch of original and watermarked images
             with torch.no_grad():
-                # Generate latent vectors
                 z = torch.randn(batch_size, latent_dim, device=device)
                 if not is_stylegan2_model:
                     z = z.view(batch_size, latent_dim, 1, 1)
-
-                # Generate images
                 if is_stylegan2_model:
                     x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
                     x_M_hat = watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
                 else:
                     x_M = gan_model(z)
                     x_M_hat = watermarked_model(z)
-
-                # Constrain watermarked images
                 x_M_hat = constrain_image(x_M_hat, x_M, max_delta)
 
-            # Forward pass through surrogate decoder
             k_M = surrogate_decoder(x_M)
             k_M_hat = surrogate_decoder(x_M_hat)
-
-            # Calculate norms
             d_k_M = torch.norm(k_M, dim=1)
             d_k_M_hat = torch.norm(k_M_hat, dim=1)
-
-            # Loss exactly matching the real decoder's training objective
             norm_diff = d_k_M - d_k_M_hat
             loss = ((norm_diff).max() + 1) ** 2
 
-            # Backward pass and optimization
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            # Update statistics
             epoch_loss += loss.item() * batch_size
             epoch_norm_diff += norm_diff.mean().item() * batch_size
             num_samples += batch_size
 
             if rank == 0 and batch_idx % 10 == 0:
                 logging.info(
-                    f"Epoch {epoch + 1}/{epochs}, "
-                    f"Batch {batch_idx + 1}/{num_batches}, "
-                    f"Loss: {loss.item():.4f}, "
-                    f"Norm diff: {norm_diff.mean().item():.4f}, "
+                    f"Epoch {epoch + 1}/{epochs}, Batch {batch_idx + 1}/{num_batches}, "
+                    f"Loss: {loss.item():.4f}, Norm diff: {norm_diff.mean().item():.4f}, "
                     f"d_k_M range: [{d_k_M.min().item():.4f}, {d_k_M.max().item():.4f}], "
                     f"d_k_M_hat range: [{d_k_M_hat.min().item():.4f}, {d_k_M_hat.max().item():.4f}]"
                 )
 
-            # Free up GPU memory
             del z, x_M, x_M_hat, k_M, k_M_hat, d_k_M, d_k_M_hat, norm_diff, loss
             torch.cuda.empty_cache()
             gc.collect()
 
-        # Compute global epoch statistics if using DDP
         if world_size > 1:
             local_avg_loss = epoch_loss / num_samples
             local_avg_loss_tensor = torch.tensor(local_avg_loss, device=device)
@@ -132,14 +107,12 @@ def train_surrogate_decoder(
         if rank == 0:
             logging.info(
                 f"Epoch {epoch + 1}/{epochs} Completed. "
-                f"Average Loss: {global_avg_loss:.4f}, "
-                f"Average Norm Difference: {global_avg_norm_diff:.4f}"
+                f"Average Loss: {global_avg_loss:.4f}, Average Norm Difference: {global_avg_norm_diff:.4f}"
             )
 
         torch.cuda.empty_cache()
         gc.collect()
 
-    # Save the trained model only from rank 0
     if rank == 0:
         model_filename = f"surrogate_decoder_{time_string}.pt"
         if world_size > 1:
@@ -157,20 +130,9 @@ def generate_attack_images(
 ) -> torch.Tensor:
     """
     Generate random images for the attack.
-
-    Args:
-        gan_model (nn.Module): The GAN model to generate images.
-        image_attack_size (int): Number of attack images to generate.
-        latent_dim (int): Dimension of the latent space.
-        device (torch.device): Device for computations.
-        batch_size (int, optional): Batch size for generation. Defaults to 100.
-
-    Returns:
-        torch.Tensor: Generated attack images.
     """
     image_attack_batches = []
     num_batches = math.ceil(image_attack_size / batch_size)
-
     gan_model.to(device)
 
     with torch.no_grad():
@@ -183,10 +145,7 @@ def generate_attack_images(
             else:
                 z = torch.randn(current_batch_size, latent_dim, 1, 1, device=device)
                 x_M = gan_model(z)
-
-            # image_attack_batches.append(torch.rand_like(x_M).cpu()) # 1. use random images
-            image_attack_batches.append(x_M.cpu())  # 2. use GAN images directly
-
+            image_attack_batches.append(x_M.cpu())
             del z, x_M
             torch.cuda.empty_cache()
             gc.collect()
@@ -195,8 +154,67 @@ def generate_attack_images(
     del image_attack_batches
     torch.cuda.empty_cache()
     gc.collect()
-
     return image_attack
+
+def generate_initial_perturbations(
+    surrogate_decoder: nn.Module,
+    images: torch.Tensor,
+    device: torch.device,
+    num_steps: int = 40,
+    alpha: float = 0.01,
+    max_delta: float = 0.05
+) -> torch.Tensor:
+    """Generate perturbed images using basic PGD for fine-tuning."""
+    surrogate_decoder.eval()
+    images = images.clone().detach().to(device)
+    images.requires_grad = True
+    original_images = images.clone().detach()
+    criterion = nn.BCELoss()
+    target_labels = torch.ones(images.size(0), 1, device=device)
+
+    for _ in range(num_steps):
+        if images.grad is not None:
+            images.grad.zero_()
+        outputs = surrogate_decoder(images)
+        loss = criterion(outputs, target_labels)
+        loss.backward()
+        with torch.no_grad():
+            images = images - alpha * images.grad.sign()
+            images = torch.clamp(images, original_images - max_delta, original_images + max_delta)
+            images.requires_grad = True
+    return images.detach()
+
+def fine_tune_surrogate(
+    surrogate_decoder: nn.Module,
+    decoder: nn.Module,
+    images: torch.Tensor,
+    device: torch.device,
+    epochs: int = 2,
+    batch_size: int = 16,
+    rank: int = 0
+) -> nn.Module:
+    """Fine-tune surrogate on perturbed images labeled by real decoder."""
+    perturbed_images = generate_initial_perturbations(surrogate_decoder, images, device)
+    surrogate_decoder.train()
+    optimizer = torch.optim.Adam(surrogate_decoder.parameters(), lr=0.0001)
+    criterion = nn.BCELoss()
+
+    num_batches = (perturbed_images.size(0) + batch_size - 1) // batch_size
+    for epoch in range(epochs):
+        for i in range(num_batches):
+            start = i * batch_size
+            end = min((i + 1) * batch_size, perturbed_images.size(0))
+            batch = perturbed_images[start:end]
+            with torch.no_grad():
+                real_labels = decoder(batch)
+            optimizer.zero_grad()
+            outputs = surrogate_decoder(batch)
+            loss = criterion(outputs, real_labels)
+            loss.backward()
+            optimizer.step()
+            if rank == 0 and i % 10 == 0:
+                logging.info(f"Fine-tune Epoch {epoch+1}, Batch {i+1}/{num_batches}, Loss: {loss.item():.4f}")
+    return surrogate_decoder
 
 def perform_pgd_attack(
     attack_type: str,
@@ -208,41 +226,25 @@ def perform_pgd_attack(
     num_steps: int,
     alpha_values: list,
     attack_batch_size: int = 10,
-    momentum: float = 0.8,
+    momentum: float = 0.9,
 ) -> tuple:
     """
-    Perform PGD attack for different alpha values with gradient comparison.
-
-    Args:
-        surrogate_decoder (nn.Module): Trained surrogate decoder.
-        decoder (nn.Module): Real decoder for scoring.
-        image_attack (torch.Tensor): Images to attack.
-        max_delta (float): Maximum perturbation.
-        device (torch.device): Device for computations.
-        num_steps (int): Number of PGD steps.
-        alpha_values (list): List of step sizes to evaluate.
-        attack_batch_size (int, optional): Batch size for attack. Defaults to 10.
-        momentum (float, optional): Momentum factor for PGD. Defaults to 0.9.
-
-    Returns:
-        tuple: Mean and standard deviation of attack scores.
+    Perform PGD attack with optional momentum.
     """
     surrogate_decoder.eval()
-    decoder.eval()  # Ensure real decoder is in eval mode
+    decoder.eval()
     for param in surrogate_decoder.parameters():
         param.requires_grad = False
     for param in decoder.parameters():
-        param.requires_grad = False  # No gradients for model parameters
+        param.requires_grad = False
 
     criterion = nn.BCELoss()
-
     k_attack_scores_mean = []
     k_attack_scores_std = []
-
     num_attack_batches = (image_attack.size(0) + attack_batch_size - 1) // attack_batch_size
 
     for alpha in alpha_values:
-        logging.info(f"Performing PGD attack with alpha = {alpha}")
+        logging.info(f"Performing PGD attack with alpha = {alpha}, momentum = {momentum}")
         k_attack_scores_alpha = []
 
         for batch_idx in range(num_attack_batches):
@@ -253,32 +255,8 @@ def perform_pgd_attack(
             original_images = image_attack_batch.clone().detach()
             target_labels = torch.ones(image_attack_batch.size(0), 1, device=device)
 
-            # Initialize momentum buffer
             momentum_buffer = torch.zeros_like(image_attack_batch)
 
-            # Gradient comparison for the first batch
-            if batch_idx == 0:
-                # Surrogate decoder gradient
-                outputs_surr = surrogate_decoder(image_attack_batch)
-                loss_surr = criterion(outputs_surr, target_labels)
-                loss_surr.backward(retain_graph=True)  # Retain graph for real decoder
-                grad_surr = image_attack_batch.grad.clone().detach()
-                logging.info(f"Surrogate decoder gradient norm: {torch.norm(grad_surr).item():.4f}")
-                logging.info(f"Surrogate decoder gradient (first few elements): {grad_surr.flatten()[:5].tolist()}")
-
-                # Real decoder gradient
-                image_attack_batch.grad.zero_()  # Clear previous gradients
-                outputs_real = decoder(image_attack_batch)
-                loss_real = criterion(outputs_real, target_labels)
-                loss_real.backward()
-                grad_real = image_attack_batch.grad.clone().detach()
-                logging.info(f"Real decoder gradient norm: {torch.norm(grad_real).item():.4f}")
-                logging.info(f"Real decoder gradient (first few elements): {grad_real.flatten()[:5].tolist()}")
-
-                # Reset gradient for PGD steps
-                image_attack_batch.grad.zero_()
-
-            # PGD attack steps
             for step in range(num_steps):
                 if image_attack_batch.grad is not None:
                     image_attack_batch.grad.zero_()
@@ -286,14 +264,9 @@ def perform_pgd_attack(
                 loss = criterion(outputs, target_labels)
                 loss.backward()
                 with torch.no_grad():
-                    # Update momentum buffer
                     grad = image_attack_batch.grad.detach()
                     momentum_buffer = momentum * momentum_buffer + grad / torch.norm(grad, p=1)
-                    
-                    # Update image using momentum
                     image_attack_batch = image_attack_batch - alpha * momentum_buffer.sign()
-                    
-                    # Project back to epsilon ball
                     image_attack_batch = torch.clamp(
                         image_attack_batch,
                         min=original_images - max_delta,
@@ -301,23 +274,9 @@ def perform_pgd_attack(
                     )
                     image_attack_batch.requires_grad = True
 
-                    # Calculate and log attack score for current step
-                    if step % 20 == 0:  # Log every 20 steps to avoid excessive output
-                        if attack_type in ["base_baseline"]:
-                            k_attack_step = decoder(image_attack_batch)
-                        elif attack_type in ["base_secure", "combined_secure", "fixed_secure"]:
-                            k_mask = generate_mask_secret_key(image_attack_batch.shape, 2024, device=device)
-                            k_attack_step = decoder(mask_image_with_key(image_attack_batch, k_mask))
-                        k_attack_score_step = torch.norm(k_attack_step, dim=1).mean().item()
-                        logging.info(f"Alpha = {alpha}, Batch {batch_idx + 1}, Step {step}/{num_steps}, Attack Score: {k_attack_score_step:.4f}")
-                        del k_attack_step, k_attack_score_step
-                        if attack_type in ["base_secure", "combined_secure", "fixed_secure"]:
-                            del k_mask
-
                 torch.cuda.empty_cache()
                 gc.collect()
 
-            # Mimic the verification API
             with torch.no_grad():
                 if attack_type in ["base_baseline"]:
                     k_attack_batch = decoder(image_attack_batch)
@@ -326,12 +285,16 @@ def perform_pgd_attack(
                     k_attack_batch = decoder(mask_image_with_key(image_attack_batch, k_mask))
                 else:
                     logging.error("attack_type is undefined.")
+                # Log surrogate and real decoder outputs for diagnostics
+                surr_output = surrogate_decoder(image_attack_batch)
+                logging.info(f"Batch {batch_idx + 1}, Surrogate output mean: {surr_output.mean().item():.3f}")
+                logging.info(f"Batch {batch_idx + 1}, Real output mean: {k_attack_batch.mean().item():.3f}")
 
-            k_attack_score_batch = (torch.norm(k_attack_batch, dim=1)).cpu().numpy()
+            k_attack_score_batch = torch.norm(k_attack_batch, dim=1).cpu().numpy()
             k_attack_scores_alpha.extend(k_attack_score_batch)
             logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
 
-            del image_attack_batch, target_labels, outputs, loss, k_attack_batch, momentum_buffer
+            del image_attack_batch, target_labels, outputs, loss, k_attack_batch, momentum_buffer, surr_output
             torch.cuda.empty_cache()
             gc.collect()
 
@@ -339,9 +302,7 @@ def perform_pgd_attack(
         std_score = np.std(k_attack_scores_alpha)
         k_attack_scores_mean.append(mean_score)
         k_attack_scores_std.append(std_score)
-        logging.info(
-            f"Alpha = {alpha}: k_attack_score mean = {mean_score:.3f}, std = {std_score:.3f}"
-        )
+        logging.info(f"Alpha = {alpha}: k_attack_score mean = {mean_score:.3f}, std = {std_score:.3f}")
 
     return k_attack_scores_mean, k_attack_scores_std
 
@@ -362,34 +323,17 @@ def attack_label_based(
     num_steps: int = 500,
     alpha_values: list = None,
     train_surrogate: bool = True,
+    finetune_surrogate: bool = False,  # New switch parameter
     rank: int = 0,
     world_size: int = 1,
     momentum: float = 0.9,
 ) -> tuple:
     """
-    Performs a label-based attack on a watermarked GAN model.
+    Performs a label-based attack on a watermarked GAN model with optional surrogate fine-tuning.
 
     Args:
-        attack_type (str): Type of attack to perform.
-        gan_model (nn.Module): Original GAN model.
-        watermarked_model (nn.Module): Watermarked GAN model.
-        max_delta (float): Maximum perturbation.
-        decoder (nn.Module): Decoder for scoring.
-        surrogate_decoder (nn.Module): Surrogate decoder to train or use.
-        latent_dim (int): Latent space dimension.
-        device (torch.device): Device for computations.
-        train_size (int): Training samples per class.
-        image_attack_size (int): Number of attack images.
-        batch_size (int, optional): Batch size for training. Defaults to 16.
-        epochs (int, optional): Training epochs. Defaults to 1.
-        attack_batch_size (int, optional): Batch size for attack. Defaults to 16.
-        num_steps (int, optional): PGD steps. Defaults to 100.
-        alpha_values (list, optional): Step sizes for PGD. Defaults to None.
-        train_surrogate (bool, optional): Whether to train the surrogate decoder. Defaults to True.
-        momentum (float, optional): Momentum factor for PGD attack. Defaults to 0.9.
-
-    Returns:
-        tuple: Mean and standard deviation of attack scores.
+        finetune_surrogate (bool, optional): Whether to fine-tune the surrogate on real decoder outputs. Defaults to False.
+        ... (other args remain unchanged)
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     if alpha_values is None:
@@ -410,7 +354,7 @@ def attack_label_based(
     )
     logging.info("Initialized image_attack.")
 
-    # Train surrogate decoder only if train_surrogate is True
+    # Train surrogate decoder if specified
     if train_surrogate:
         train_surrogate_decoder(
             attack_type=attack_type,
@@ -432,6 +376,19 @@ def attack_label_based(
         if rank == 0:
             logging.info("Using pre-trained surrogate decoder.")
 
+    # Fine-tune surrogate if specified
+    if finetune_surrogate and rank == 0:
+        surrogate_decoder = fine_tune_surrogate(
+            surrogate_decoder=surrogate_decoder,
+            decoder=decoder,
+            images=image_attack,
+            device=device,
+            epochs=2,  # Adjustable
+            batch_size=batch_size,
+            rank=rank
+        )
+        logging.info("Surrogate decoder fine-tuned with real decoder outputs.")
+
     # Perform PGD attack
     if rank == 0:
         k_attack_scores_mean, k_attack_scores_std = perform_pgd_attack(
@@ -447,5 +404,5 @@ def attack_label_based(
             momentum=momentum
         )
         logging.info("PGD attack for different alpha values completed.")
-
         return k_attack_scores_mean, k_attack_scores_std
+    return [], []  # Return empty for non-rank-0 processes
