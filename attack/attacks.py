@@ -45,9 +45,7 @@ def train_surrogate_decoder(
     watermarked_model.to(device)
 
     # Define optimizer
-    optimizer = torch.optim.Adam(
-        surrogate_decoder.parameters(), lr=0.0001, betas=(0.5, 0.999)
-    )
+    optimizer = torch.optim.Adagrad(surrogate_decoder.parameters(), lr=0.0001)
 
     # Check if GAN model is StyleGAN2
     is_stylegan2_model = is_stylegan2(gan_model)
@@ -87,7 +85,7 @@ def train_surrogate_decoder(
             d_k_M = torch.norm(k_M, dim=1)
             d_k_M_hat = torch.norm(k_M_hat, dim=1)
 
-            # Loss similar to real decoder's training objective
+            # Loss exactly matching the real decoder's training objective
             norm_diff = d_k_M - d_k_M_hat
             loss = ((norm_diff).max() + 1) ** 2
 
