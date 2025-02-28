@@ -195,9 +195,13 @@ def fine_tune_surrogate(
 ) -> nn.Module:
     """Fine-tune surrogate on perturbed images labeled by real decoder to minimize the norm difference, generating images on-the-fly."""
     surrogate_decoder.train()
-    optimizer = torch.optim.Adagrad(surrogate_decoder.parameters(), lr=0.0001)
+    optimizer = torch.optim.Adagrad(surrogate_decoder.parameters(), lr=0.001)  # Increased learning rate
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
 
     num_batches = (images.size(0) + batch_size - 1) // batch_size
+    best_loss = float('inf')
+    best_model_state = None
+
     for epoch in range(epochs):
         epoch_loss = 0.0
         num_samples = 0
@@ -212,7 +216,7 @@ def fine_tune_surrogate(
                 surrogate_decoder=surrogate_decoder,
                 images=batch,
                 device=device,
-                num_steps=100,
+                num_steps=50,  # Reduced steps for faster iteration
                 alpha=0.05,
                 max_delta=2.0
             )
@@ -220,18 +224,31 @@ def fine_tune_surrogate(
             # Get outputs from both decoders
             with torch.no_grad():
                 k_real = decoder(perturbed_batch)
-            k_surrogate = surrogate_decoder(perturbed_batch)
+                # Apply sigmoid to normalize real decoder outputs
+                k_real = torch.sigmoid(k_real)
             
-            # Calculate norms and norm difference
+            k_surrogate = surrogate_decoder(perturbed_batch)
+            # Apply sigmoid to normalize surrogate outputs
+            k_surrogate = torch.sigmoid(k_surrogate)
+            
+            # Calculate normalized norms
             d_k_real = torch.norm(k_real, dim=1)
             d_k_surrogate = torch.norm(k_surrogate, dim=1)
-            norm_diff = d_k_real - d_k_surrogate
             
-            # Minimize the absolute norm difference
-            loss = torch.mean(torch.abs(norm_diff))
+            # Compute relative error and MSE loss
+            norm_diff = d_k_real - d_k_surrogate
+            relative_error = torch.abs(norm_diff) / (d_k_real + 1e-6)
+            mse_loss = F.mse_loss(k_surrogate, k_real)
+            
+            # Combined loss with both norm difference and direct output matching
+            loss = torch.mean(relative_error) + mse_loss
 
             optimizer.zero_grad()
             loss.backward()
+            
+            # Add gradient clipping
+            torch.nn.utils.clip_grad_norm_(surrogate_decoder.parameters(), max_norm=1.0)
+            
             optimizer.step()
 
             epoch_loss += loss.item() * batch.size(0)
@@ -240,7 +257,8 @@ def fine_tune_surrogate(
             if rank == 0 and i % 10 == 0:
                 logging.info(
                     f"Fine-tune Epoch {epoch+1}, Batch {i+1}/{num_batches}, "
-                    f"Loss: {loss.item():.4f}, Norm diff: {norm_diff.mean().item():.4f}, "
+                    f"Loss: {loss.item():.4f}, MSE: {mse_loss.item():.4f}, "
+                    f"Relative Error: {relative_error.mean().item():.4f}, "
                     f"d_k_real range: [{d_k_real.min().item():.4f}, {d_k_real.max().item():.4f}], "
                     f"d_k_surrogate range: [{d_k_surrogate.min().item():.4f}, {d_k_surrogate.max().item():.4f}]"
                 )
@@ -251,9 +269,21 @@ def fine_tune_surrogate(
                 f"Fine-tune Epoch {epoch + 1}/{epochs} Completed. "
                 f"Average Loss: {avg_epoch_loss:.4f}"
             )
+        
+        # Learning rate scheduling
+        scheduler.step(avg_epoch_loss)
+        
+        # Save best model
+        if avg_epoch_loss < best_loss:
+            best_loss = avg_epoch_loss
+            best_model_state = surrogate_decoder.state_dict().copy()
 
         torch.cuda.empty_cache()
         gc.collect()
+
+    # Restore best model
+    if best_model_state is not None:
+        surrogate_decoder.load_state_dict(best_model_state)
 
     return surrogate_decoder
 
