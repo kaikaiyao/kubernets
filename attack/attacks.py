@@ -226,12 +226,20 @@ def fine_tune_surrogate(
 ) -> nn.Module:
     """Fine-tune surrogate on perturbed images labeled by real decoder to match output patterns."""
     surrogate_decoder.train()
-    optimizer = torch.optim.Adam(surrogate_decoder.parameters(), lr=0.005)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
+    decoder.eval()  # Ensure decoder is in eval mode
+    
+    # Use a smaller learning rate and weight decay
+    optimizer = torch.optim.Adam(surrogate_decoder.parameters(), lr=0.001, weight_decay=1e-5)
+    scheduler = torch.optim.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
 
     num_batches = (images.size(0) + batch_size - 1) // batch_size
     best_loss = float('inf')
     best_model_state = None
+    
+    # Initialize running statistics for loss normalization
+    running_norm_diff_mean = 0
+    running_direction_loss_mean = 0
+    beta = 0.99  # For running mean calculation
 
     for epoch in range(epochs):
         epoch_loss = 0.0
@@ -240,15 +248,16 @@ def fine_tune_surrogate(
         for i in range(num_batches):
             start = i * batch_size
             end = min((i + 1) * batch_size, images.size(0))
-            batch = images[start:end]
+            batch = images[start:end].to(device)
             
-            # Generate perturbed images on-the-fly
+            # Generate perturbed images with smaller perturbation initially
+            alpha = 0.01 * (1 + epoch)  # Gradually increase perturbation
             perturbed_batch = generate_initial_perturbations(
                 surrogate_decoder=surrogate_decoder,
                 images=batch,
                 device=device,
-                num_steps=200,
-                alpha=0.05,
+                num_steps=100,  # Reduced steps
+                alpha=alpha,
                 max_delta=2.0
             )
             
@@ -259,36 +268,53 @@ def fine_tune_surrogate(
             k_surrogate = surrogate_decoder(perturbed_batch)
             k_surrogate_orig = surrogate_decoder(batch)
             
-            # Calculate norms
+            # Calculate normalized feature vectors
+            k_real_norm = F.normalize(k_real.view(k_real.size(0), -1), dim=1)
+            k_real_orig_norm = F.normalize(k_real_orig.view(k_real_orig.size(0), -1), dim=1)
+            k_surrogate_norm = F.normalize(k_surrogate.view(k_surrogate.size(0), -1), dim=1)
+            k_surrogate_orig_norm = F.normalize(k_surrogate_orig.view(k_surrogate_orig.size(0), -1), dim=1)
+            
+            # Calculate norms separately
             d_k_real = torch.norm(k_real, dim=1)
             d_k_real_orig = torch.norm(k_real_orig, dim=1)
             d_k_surrogate = torch.norm(k_surrogate, dim=1)
             d_k_surrogate_orig = torch.norm(k_surrogate_orig, dim=1)
             
-            # Compute norm differences
-            real_norm_diff = d_k_real_orig - d_k_real
-            surrogate_norm_diff = d_k_surrogate_orig - d_k_surrogate
+            # Compute relative norm differences to make it scale-invariant
+            real_norm_diff = (d_k_real_orig - d_k_real) / (d_k_real_orig + 1e-6)
+            surrogate_norm_diff = (d_k_surrogate_orig - d_k_surrogate) / (d_k_surrogate_orig + 1e-6)
             
-            # MSE loss on the norm differences to match the behavior
+            # MSE loss on the relative norm differences
             norm_diff_loss = F.mse_loss(surrogate_norm_diff, real_norm_diff)
             
-            # Direction alignment loss using cosine similarity
-            cos_sim_orig = F.cosine_similarity(k_real_orig.view(k_real_orig.size(0), -1),
-                                             k_surrogate_orig.view(k_surrogate_orig.size(0), -1),
-                                             dim=1)
-            cos_sim_pert = F.cosine_similarity(k_real.view(k_real.size(0), -1),
-                                             k_surrogate.view(k_surrogate.size(0), -1),
-                                             dim=1)
-            direction_loss = -cos_sim_orig.mean() - cos_sim_pert.mean()
+            # Direction alignment loss using normalized vectors
+            direction_loss = (2 - F.cosine_similarity(k_real_orig_norm, k_surrogate_orig_norm, dim=1).mean() -
+                            F.cosine_similarity(k_real_norm, k_surrogate_norm, dim=1).mean())
             
-            # Combined loss with dynamic weighting
-            loss = norm_diff_loss + 0.5 * direction_loss
+            # Update running means for loss normalization
+            if i == 0 and epoch == 0:
+                running_norm_diff_mean = norm_diff_loss.item()
+                running_direction_loss_mean = direction_loss.item()
+            else:
+                running_norm_diff_mean = beta * running_norm_diff_mean + (1 - beta) * norm_diff_loss.item()
+                running_direction_loss_mean = beta * running_direction_loss_mean + (1 - beta) * direction_loss.item()
+            
+            # Normalize losses by running means
+            norm_diff_loss_normalized = norm_diff_loss / (running_norm_diff_mean + 1e-6)
+            direction_loss_normalized = direction_loss / (running_direction_loss_mean + 1e-6)
+            
+            # Combined loss with adaptive weighting
+            loss = norm_diff_loss_normalized + direction_loss_normalized
+            
+            # Add L2 regularization on the difference between surrogate and real decoder outputs
+            l2_reg = 0.01 * (torch.norm(k_surrogate - k_real.detach()) + torch.norm(k_surrogate_orig - k_real_orig.detach()))
+            loss = loss + l2_reg
             
             optimizer.zero_grad()
             loss.backward()
             
-            # Add gradient clipping
-            torch.nn.utils.clip_grad_norm_(surrogate_decoder.parameters(), max_norm=5.0)
+            # Gradient clipping with smaller max norm
+            torch.nn.utils.clip_grad_norm_(surrogate_decoder.parameters(), max_norm=1.0)
             
             optimizer.step()
 
@@ -298,10 +324,14 @@ def fine_tune_surrogate(
             if rank == 0 and i % 10 == 0:
                 logging.info(
                     f"Fine-tune Epoch {epoch+1}, Batch {i+1}/{num_batches}, "
-                    f"Loss: {loss.item():.4f}, Norm Diff Loss: {norm_diff_loss.item():.4f}, "
-                    f"Direction Loss: {direction_loss.item():.4f}, "
+                    f"Total Loss: {loss.item():.4f}, "
+                    f"Norm Diff Loss: {norm_diff_loss.item():.4f} (Normalized: {norm_diff_loss_normalized.item():.4f}), "
+                    f"Direction Loss: {direction_loss.item():.4f} (Normalized: {direction_loss_normalized.item():.4f}), "
+                    f"L2 Reg: {l2_reg.item():.4f}, "
                     f"Real Norm Diff: {real_norm_diff.mean().item():.4f}, "
-                    f"Surrogate Norm Diff: {surrogate_norm_diff.mean().item():.4f}"
+                    f"Surrogate Norm Diff: {surrogate_norm_diff.mean().item():.4f}, "
+                    f"Real Norm Range: [{d_k_real.min().item():.4f}, {d_k_real.max().item():.4f}], "
+                    f"Surrogate Norm Range: [{d_k_surrogate.min().item():.4f}, {d_k_surrogate.max().item():.4f}]"
                 )
 
             del batch, perturbed_batch, k_real, k_real_orig, k_surrogate, k_surrogate_orig
@@ -317,8 +347,8 @@ def fine_tune_surrogate(
                 f"Average Loss: {avg_epoch_loss:.4f}"
             )
         
-        # Learning rate scheduling
-        scheduler.step()
+        # Learning rate scheduling based on average loss
+        scheduler.step(avg_epoch_loss)
         
         # Save best model
         if avg_epoch_loss < best_loss:
