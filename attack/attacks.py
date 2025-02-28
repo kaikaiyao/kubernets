@@ -211,7 +211,14 @@ def perform_pgd_attack(
     momentum: float = 0.8,
     attack_batch_size: int = 10,
     num_transforms: int = 3,
-) -> tuple: # enabled momentum and transforms
+) -> tuple:
+    """
+    Perform PGD attack with Momentum and Input Diversification (DI-MIM).
+
+    Args:
+        num_transforms (int): Number of random transformations per step (default: 3).
+        ... (other args same as before)
+    """
     surrogate_decoder.eval()
     decoder.eval()
     for param in surrogate_decoder.parameters():
@@ -246,24 +253,24 @@ def perform_pgd_attack(
 
                 # Compute gradients over multiple transformations
                 total_grad = torch.zeros_like(image_attack_batch)
-                
                 for _ in range(num_transforms):
                     # Random resize (e.g., 90-110% of original size)
                     scale = torch.rand(1).item() * 0.2 + 0.9  # 0.9 to 1.1
                     new_size = int(256 * scale)
                     transformed = F.interpolate(image_attack_batch, size=(new_size, new_size), mode='bilinear', align_corners=False)
                     transformed = F.interpolate(transformed, size=(256, 256), mode='bilinear', align_corners=False)
-                    transformed.requires_grad = True
-                    
+                    # No need to set requires_grad = True here; it inherits from image_attack_batch
+
                     outputs = surrogate_decoder(transformed)
                     loss = criterion(outputs, target_labels)
-                    loss.backward()
-                    total_grad += transformed.grad
-                    
+                    loss.backward()  # Gradient accumulates in image_attack_batch.grad
+                    total_grad += image_attack_batch.grad.clone().detach()
+                    image_attack_batch.grad.zero_()  # Clear for next transform
+
                 with torch.no_grad():
                     avg_grad = total_grad / num_transforms
                     velocity = momentum * velocity + avg_grad
-                    image_attack_batch = image_attack_batch + alpha * velocity.sign()
+                    image_attack_batch = image_attack_batch + alpha * velocity.sign()  # Update with + since we maximize loss
                     image_attack_batch = torch.clamp(
                         image_attack_batch,
                         min=original_images - max_delta,
