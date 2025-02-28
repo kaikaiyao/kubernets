@@ -62,7 +62,7 @@ spec:
                       --num_pool_layers_surr 7 \
                       --initial_channels_surr 64 \
                       --max_delta 2.0 \
-                      --train_size 100000 \
+                      --train_size 200000 \
                       --image_attack_size 100 \
                       --num_steps_pgd 50 \
                       --attack_image_type "original_image" \
