@@ -1,38 +1,46 @@
 #!/bin/bash
-# This script aggregates GPU usage per user by parsing the output of "kubectl describe pods"
 
-# Declare an associative array to hold GPU usage per user
-declare -A gpu_usage
-current_user=""
+# Process the output of kubectl describe pods to extract GPU usage per user
+kubectl describe pods | awk '
+# When a new pod description starts
+/^Name: / {
+    # If the previous pod was running and has a user, output its user and GPU count
+    if (current_pod != "" && is_running && user != "") {
+        print user, gpus
+    }
+    # Reset variables for the new pod
+    current_pod = $2
+    is_running = 0
+    user = ""
+    gpus = 0
+}
 
-# Process the kubectl describe pods output line-by-line
-while IFS= read -r line; do
-    # When a new pod starts, clear the current user
-    if [[ "$line" =~ ^Name: ]]; then
-         current_user=""
-    fi
+# Check if the pod is currently running
+/^Status: Running/ {
+    is_running = 1
+}
 
-    # Look for the label line that contains the user info (e.g., "eidf/user=s2027538-infk8s")
-    if [[ "$line" =~ "eidf/user=" ]]; then
-         if [[ "$line" =~ eidf\/user=([^[:space:]]+) ]]; then
-             current_user="${BASH_REMATCH[1]}"
-         fi
-    fi
+# Extract the user from lines containing the eidf/user= label
+/eidf\/user=/ {
+    match($0, /eidf\/user=([^ ]+)/, a)
+    user = a[1]
+}
 
-    # Look for the GPU limit line; assume it is formatted like "nvidia.com/gpu:  2"
-    if [[ "$line" =~ "nvidia.com/gpu:" ]]; then
-         # Extract the GPU count (assumed to be the second field)
-         gpu_count=$(echo "$line" | awk '{print $2}')
-         # Only add if we have a user associated with this pod
-         if [[ -n "$current_user" ]]; then
-              # Add the GPU count to the current user's total
-              gpu_usage["$current_user"]=$(( gpu_usage["$current_user"] + gpu_count ))
-         fi
-    fi
-done < <(kubectl describe pods)
+# Sum GPU requests from lines specifying nvidia.com/gpu under Requests
+/^      nvidia.com\/gpu: / {
+    gpus += $2
+}
 
-# Output the aggregated GPU usage per user
-echo "GPU usage per user:"
-for user in "${!gpu_usage[@]}"; do
-    echo "$user: ${gpu_usage[$user]} GPU(s)"
-done
+# Handle the last pod at the end of input
+END {
+    if (current_pod != "" && is_running && user != "") {
+        print user, gpus
+    }
+}
+' | awk '{
+    # Sum the GPUs for each user across all their running pods
+    s[$1] += $2
+} END {
+    # Output each user and their total GPU usage
+    for (u in s) print u, s[u]
+}'
