@@ -27,20 +27,7 @@ def train_surrogate_decoder(
     world_size: int = 1,
 ) -> None:
     """
-    Train the surrogate decoder by generating batches on-the-fly on the GPU using DDP.
-
-    Args:
-        surrogate_decoder (nn.Module): The surrogate decoder model to train (possibly DDP-wrapped).
-        gan_model (nn.Module): The original GAN model for generating images.
-        watermarked_model (nn.Module): The watermarked GAN model.
-        max_delta (float): Maximum perturbation allowed for watermarked images.
-        latent_dim (int): Dimension of the latent space.
-        device (torch.device): Device to perform computations on (e.g., 'cuda').
-        train_size (int): Number of training samples (per class).
-        epochs (int, optional): Number of training epochs. Defaults to 5.
-        batch_size (int, optional): Batch size for training per GPU. Defaults to 16.
-        rank (int, optional): Rank of the current process in DDP. Defaults to 0.
-        world_size (int, optional): Total number of processes in DDP. Defaults to 1.
+    Train the surrogate decoder using a loss function similar to the real decoder's training objective.
     """
     time_string = generate_time_based_string()
     if rank == 0:
@@ -57,8 +44,7 @@ def train_surrogate_decoder(
     watermarked_model.eval()
     watermarked_model.to(device)
 
-    # Define loss function and optimizer
-    criterion = nn.BCELoss()
+    # Define optimizer
     optimizer = torch.optim.Adam(
         surrogate_decoder.parameters(), lr=0.0001, betas=(0.5, 0.999)
     )
@@ -67,25 +53,22 @@ def train_surrogate_decoder(
     is_stylegan2_model = is_stylegan2(gan_model)
 
     # Calculate number of batches (ceiling division) per GPU
-    num_batches = (train_size * 2 + batch_size - 1) // batch_size
+    num_batches = (train_size + batch_size - 1) // batch_size
 
     for epoch in range(epochs):
         epoch_loss = 0.0
-        epoch_correct = 0
-        epoch_total = 0
+        epoch_norm_diff = 0.0
+        num_samples = 0
 
         for batch_idx in range(num_batches):
-            # Determine current batch size (handles last batch)
-            current_batch_size = min(batch_size, train_size * 2 - batch_idx * batch_size)
-
-            # Disable gradients for GAN models during batch generation
+            # Generate batch of original and watermarked images
             with torch.no_grad():
-                # Generate latent vectors on the device
-                z = torch.randn(current_batch_size, latent_dim, device=device)
+                # Generate latent vectors
+                z = torch.randn(batch_size, latent_dim, device=device)
                 if not is_stylegan2_model:
-                    z = z.view(current_batch_size, latent_dim, 1, 1)
+                    z = z.view(batch_size, latent_dim, 1, 1)
 
-                # Generate images using GAN models
+                # Generate images
                 if is_stylegan2_model:
                     x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
                     x_M_hat = watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
@@ -93,86 +76,66 @@ def train_surrogate_decoder(
                     x_M = gan_model(z)
                     x_M_hat = watermarked_model(z)
 
-                # Constrain the watermarked images
+                # Constrain watermarked images
                 x_M_hat = constrain_image(x_M_hat, x_M, max_delta)
 
-            # Create labels: 0 for x_M (original), 1 for x_M_hat (watermarked)
-            labels = torch.cat([
-                torch.zeros(current_batch_size // 2, 1, device=device),
-                torch.ones(current_batch_size // 2, 1, device=device)
-            ])
-            if current_batch_size % 2 != 0:
-                labels = torch.cat([labels, torch.zeros(1, 1, device=device)])
+            # Forward pass through surrogate decoder
+            k_M = surrogate_decoder(x_M)
+            k_M_hat = surrogate_decoder(x_M_hat)
 
-            # Combine original and watermarked images
-            images = torch.cat([
-                x_M[:current_batch_size // 2],
-                x_M_hat[current_batch_size // 2:]
-            ], dim=0)
-            if current_batch_size % 2 != 0:
-                images = torch.cat([
-                    images,
-                    x_M[current_batch_size // 2:current_batch_size // 2 + 1]
-                ], dim=0)
+            # Calculate norms
+            d_k_M = torch.norm(k_M, dim=1)
+            d_k_M_hat = torch.norm(k_M_hat, dim=1)
 
-            # Shuffle images and labels
-            perm = torch.randperm(current_batch_size, device=device)
-            images = images[perm]
-            labels = labels[perm]
+            # Loss similar to real decoder's training objective
+            norm_diff = d_k_M - d_k_M_hat
+            loss = ((norm_diff).max() + 1) ** 2
 
-            # Train on the batch
+            # Backward pass and optimization
             optimizer.zero_grad()
-            outputs = surrogate_decoder(images)
-            loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
 
-            epoch_loss += loss.item()
+            # Update statistics
+            epoch_loss += loss.item() * batch_size
+            epoch_norm_diff += norm_diff.mean().item() * batch_size
+            num_samples += batch_size
 
-            # Calculate accuracy
-            with torch.no_grad():
-                predicted = (outputs > 0.5).float()
-                correct = (predicted == labels).sum().item()
-                total = labels.numel()
-                batch_accuracy = correct / total
-
-            epoch_correct += correct
-            epoch_total += total
-
-            if rank == 0:
+            if rank == 0 and batch_idx % 10 == 0:
                 logging.info(
                     f"Epoch {epoch + 1}/{epochs}, "
                     f"Batch {batch_idx + 1}/{num_batches}, "
                     f"Loss: {loss.item():.4f}, "
-                    f"Accuracy: {batch_accuracy:.4f}"
+                    f"Norm diff: {norm_diff.mean().item():.4f}, "
+                    f"d_k_M range: [{d_k_M.min().item():.4f}, {d_k_M.max().item():.4f}], "
+                    f"d_k_M_hat range: [{d_k_M_hat.min().item():.4f}, {d_k_M_hat.max().item():.4f}]"
                 )
 
             # Free up GPU memory
-            del z, x_M, x_M_hat, images, labels, outputs, loss, predicted
+            del z, x_M, x_M_hat, k_M, k_M_hat, d_k_M, d_k_M_hat, norm_diff, loss
             torch.cuda.empty_cache()
             gc.collect()
 
         # Compute global epoch statistics if using DDP
         if world_size > 1:
-            # Aggregate local averages across GPUs
-            local_avg_loss = epoch_loss / num_batches
+            local_avg_loss = epoch_loss / num_samples
             local_avg_loss_tensor = torch.tensor(local_avg_loss, device=device)
             dist.all_reduce(local_avg_loss_tensor, op=dist.ReduceOp.SUM)
             global_avg_loss = local_avg_loss_tensor.item() / world_size
 
-            local_accuracy = epoch_correct / epoch_total if epoch_total > 0 else 0
-            local_accuracy_tensor = torch.tensor(local_accuracy, device=device)
-            dist.all_reduce(local_accuracy_tensor, op=dist.ReduceOp.SUM)
-            global_accuracy = local_accuracy_tensor.item() / world_size
+            local_avg_norm_diff = epoch_norm_diff / num_samples
+            local_avg_norm_diff_tensor = torch.tensor(local_avg_norm_diff, device=device)
+            dist.all_reduce(local_avg_norm_diff_tensor, op=dist.ReduceOp.SUM)
+            global_avg_norm_diff = local_avg_norm_diff_tensor.item() / world_size
         else:
-            global_avg_loss = epoch_loss / num_batches
-            global_accuracy = epoch_correct / epoch_total if epoch_total > 0 else 0
+            global_avg_loss = epoch_loss / num_samples
+            global_avg_norm_diff = epoch_norm_diff / num_samples
 
         if rank == 0:
             logging.info(
                 f"Epoch {epoch + 1}/{epochs} Completed. "
                 f"Average Loss: {global_avg_loss:.4f}, "
-                f"Average Accuracy: {global_accuracy:.4f}"
+                f"Average Norm Difference: {global_avg_norm_diff:.4f}"
             )
 
         torch.cuda.empty_cache()
@@ -249,14 +212,26 @@ def perform_pgd_attack(
     attack_batch_size: int = 10,
 ) -> tuple:
     """
-    Perform PGD attack using only surrogate decoder (black-box attack).
+    Perform PGD attack for different alpha values.
+
+    Args:
+        surrogate_decoder (nn.Module): Trained surrogate decoder.
+        decoder (nn.Module): Real decoder for scoring.
+        image_attack (torch.Tensor): Images to attack.
+        max_delta (float): Maximum perturbation.
+        device (torch.device): Device for computations.
+        num_steps (int): Number of PGD steps.
+        alpha_values (list): List of step sizes to evaluate.
+        attack_batch_size (int, optional): Batch size for attack. Defaults to 10.
+
+    Returns:
+        tuple: Mean and standard deviation of attack scores.
     """
     surrogate_decoder.eval()
-    decoder.eval()
     for param in surrogate_decoder.parameters():
         param.requires_grad = False
-    for param in decoder.parameters():
-        param.requires_grad = False
+
+    criterion = nn.BCELoss()
 
     k_attack_scores_mean = []
     k_attack_scores_std = []
@@ -273,38 +248,17 @@ def perform_pgd_attack(
             image_attack_batch = image_attack[start_idx:end_idx].clone().detach().to(device)
             image_attack_batch.requires_grad = True
             original_images = image_attack_batch.clone().detach()
-
-            # Get initial surrogate logits
-            with torch.no_grad():
-                surr_logits = surrogate_decoder(image_attack_batch)
-                logging.info(f"Initial surrogate logits range: {surr_logits.min().item():.4f} to {surr_logits.max().item():.4f}")
+            target_labels = torch.ones(image_attack_batch.size(0), 1, device=device)
 
             for step in range(num_steps):
-                if step % 10 == 0:
-                    with torch.no_grad():
-                        surr_logits = surrogate_decoder(image_attack_batch)
-                        logging.info(f"Step {step}, surr logits: {surr_logits.min().item():.4f} to {surr_logits.max().item():.4f}")
-
                 if image_attack_batch.grad is not None:
                     image_attack_batch.grad.zero_()
-
-                # Maximize surrogate decoder's output
-                surr_output = surrogate_decoder(image_attack_batch)
-                loss = -torch.mean(surr_output)  # Negative because we want to maximize
-                
-                # Add L2 regularization
-                l2_reg = 0.01 * torch.norm(image_attack_batch - original_images)
-                loss = loss + l2_reg
-
+                outputs = surrogate_decoder(image_attack_batch)
+                loss = criterion(outputs, target_labels)
                 loss.backward()
-
-                if step % 10 == 0:
-                    grad_stats = image_attack_batch.grad.abs()
-                    logging.info(f"Step {step}, gradient stats - mean: {grad_stats.mean().item():.4f}, max: {grad_stats.max().item():.4f}")
-
                 with torch.no_grad():
                     grad_sign = image_attack_batch.grad.sign()
-                    image_attack_batch = image_attack_batch - alpha * grad_sign
+                    image_attack_batch = image_attack_batch - alpha * grad_sign # since loss is computed towards target label, here we should use "-"
                     image_attack_batch = torch.clamp(
                         image_attack_batch,
                         min=original_images - max_delta,
@@ -312,14 +266,25 @@ def perform_pgd_attack(
                     )
                     image_attack_batch.requires_grad = True
 
-            # After PGD, evaluate with real decoder
-            with torch.no_grad():
-                final_real_output = decoder(image_attack_batch)
-                k_attack_score_batch = (torch.norm(final_real_output, dim=1)).cpu().numpy()
-                k_attack_scores_alpha.extend(k_attack_score_batch)
-                logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
+                torch.cuda.empty_cache()
+                gc.collect()
 
-            del image_attack_batch, surr_output
+            # mimic the verification API
+            with torch.no_grad():
+                if attack_type in ["base_baseline"]:
+                    k_attack_batch = decoder(image_attack_batch)
+                elif attack_type in ["base_secure", "combined_secure", "fixed_secure"]:
+                    k_mask = generate_mask_secret_key(image_attack_batch.shape, 2024, device=device) 
+                    # Note that though we explicitly pass in image_attack_batch.shape, but only the channel number is needed (refer to this func), which is 3, and is always 3 across all experiments
+                    k_attack_batch = decoder(mask_image_with_key(image_attack_batch, k_mask))
+                else:
+                    logging.error("attack_type is undefined.")
+                    
+            k_attack_score_batch = (torch.norm(k_attack_batch, dim=1)).cpu().numpy() # if attack perform well -> 1, otherwise -> 0
+            k_attack_scores_alpha.extend(k_attack_score_batch)
+            logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
+
+            del image_attack_batch, target_labels, outputs, loss, k_attack_batch
             torch.cuda.empty_cache()
             gc.collect()
 
@@ -327,7 +292,9 @@ def perform_pgd_attack(
         std_score = np.std(k_attack_scores_alpha)
         k_attack_scores_mean.append(mean_score)
         k_attack_scores_std.append(std_score)
-        logging.info(f"Alpha = {alpha}: k_attack_score mean = {mean_score:.3f}, std = {std_score:.3f}")
+        logging.info(
+            f"Alpha = {alpha}: k_attack_score mean = {mean_score:.3f}, std = {std_score:.3f}"
+        )
 
     return k_attack_scores_mean, k_attack_scores_std
 
