@@ -249,7 +249,7 @@ def perform_pgd_attack(
     attack_batch_size: int = 10,
 ) -> tuple:
     """
-    Perform PGD attack using feature matching and regularization.
+    Perform PGD attack using only surrogate decoder (black-box attack).
     """
     surrogate_decoder.eval()
     decoder.eval()
@@ -274,40 +274,23 @@ def perform_pgd_attack(
             image_attack_batch.requires_grad = True
             original_images = image_attack_batch.clone().detach()
 
-            # Get initial feature maps from both decoders
+            # Get initial surrogate logits
             with torch.no_grad():
-                real_features = decoder.features(image_attack_batch)
-                surr_features = surrogate_decoder.features(image_attack_batch)
-                initial_real_norm = torch.norm(real_features.view(real_features.size(0), -1), dim=1)
-                logging.info(f"Initial real features norm range: {initial_real_norm.min().item():.4f} to {initial_real_norm.max().item():.4f}")
+                surr_logits = surrogate_decoder(image_attack_batch)
+                logging.info(f"Initial surrogate logits range: {surr_logits.min().item():.4f} to {surr_logits.max().item():.4f}")
 
             for step in range(num_steps):
                 if step % 10 == 0:
                     with torch.no_grad():
-                        real_features = decoder.features(image_attack_batch)
-                        surr_features = surrogate_decoder.features(image_attack_batch)
-                        real_norm = torch.norm(real_features.view(real_features.size(0), -1), dim=1)
-                        surr_norm = torch.norm(surr_features.view(surr_features.size(0), -1), dim=1)
-                        logging.info(f"Step {step}, real norm: {real_norm.min().item():.4f} to {real_norm.max().item():.4f}")
-                        logging.info(f"Step {step}, surr norm: {surr_norm.min().item():.4f} to {surr_norm.max().item():.4f}")
+                        surr_logits = surrogate_decoder(image_attack_batch)
+                        logging.info(f"Step {step}, surr logits: {surr_logits.min().item():.4f} to {surr_logits.max().item():.4f}")
 
                 if image_attack_batch.grad is not None:
                     image_attack_batch.grad.zero_()
 
-                # Get feature maps from both decoders
-                real_features = decoder.features(image_attack_batch)
-                surr_features = surrogate_decoder.features(image_attack_batch)
-
-                # Compute feature matching loss
-                real_features_flat = real_features.view(real_features.size(0), -1)
-                surr_features_flat = surr_features.view(surr_features.size(0), -1)
-                
-                # Normalize features
-                real_features_norm = F.normalize(real_features_flat, p=2, dim=1)
-                surr_features_norm = F.normalize(surr_features_flat, p=2, dim=1)
-                
-                # Compute cosine similarity loss
-                loss = -torch.sum(real_features_norm * surr_features_norm, dim=1).mean()
+                # Maximize surrogate decoder's output
+                surr_output = surrogate_decoder(image_attack_batch)
+                loss = -torch.mean(surr_output)  # Negative because we want to maximize
                 
                 # Add L2 regularization
                 l2_reg = 0.01 * torch.norm(image_attack_batch - original_images)
@@ -329,21 +312,14 @@ def perform_pgd_attack(
                     )
                     image_attack_batch.requires_grad = True
 
-            # After PGD, check both surrogate and real decoder outputs
+            # After PGD, evaluate with real decoder
             with torch.no_grad():
-                real_features = decoder.features(image_attack_batch)
-                surr_features = surrogate_decoder.features(image_attack_batch)
-                real_norm = torch.norm(real_features.view(real_features.size(0), -1), dim=1)
-                surr_norm = torch.norm(surr_features.view(surr_features.size(0), -1), dim=1)
-                logging.info(f"Final real norm range: {real_norm.min().item():.4f} to {real_norm.max().item():.4f}")
-                logging.info(f"Final surr norm range: {surr_norm.min().item():.4f} to {surr_norm.max().item():.4f}")
-
                 final_real_output = decoder(image_attack_batch)
                 k_attack_score_batch = (torch.norm(final_real_output, dim=1)).cpu().numpy()
                 k_attack_scores_alpha.extend(k_attack_score_batch)
                 logging.info(f"Batch {batch_idx + 1}/{num_attack_batches} processed.")
 
-            del image_attack_batch, real_features, surr_features
+            del image_attack_batch, surr_output
             torch.cuda.empty_cache()
             gc.collect()
 
