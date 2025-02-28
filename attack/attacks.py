@@ -127,26 +127,57 @@ def generate_attack_images(
     latent_dim: int,
     device: torch.device,
     batch_size: int = 100,
+    attack_image_type: str = "original_image",
 ) -> torch.Tensor:
     """
-    Generate random images for the attack.
+    Generate images for the attack.
+    
+    Args:
+        gan_model: The GAN model to use for generating images
+        image_attack_size: Number of images to generate
+        latent_dim: Dimension of the latent space
+        device: Device to use for computation
+        batch_size: Batch size for generation
+        attack_image_type: Type of images to generate ("original_image" or "random_image")
+    
+    Returns:
+        torch.Tensor: Generated attack images
     """
     image_attack_batches = []
     num_batches = math.ceil(image_attack_size / batch_size)
     gan_model.to(device)
 
     with torch.no_grad():
+        # Get image shape from GAN model by doing a single forward pass
+        if is_stylegan2(gan_model):
+            z = torch.randn((1, latent_dim), device=device)
+            sample_image = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
+        else:
+            z = torch.randn(1, latent_dim, 1, 1, device=device)
+            sample_image = gan_model(z)
+        image_shape = sample_image.shape[1:]
+        del z, sample_image
+
         for batch_idx in range(num_batches):
             logging.info(f"Generating attack images, batch index = {batch_idx}")
             current_batch_size = min(batch_size, image_attack_size - batch_idx * batch_size)
-            if is_stylegan2(gan_model):
-                z = torch.randn((current_batch_size, latent_dim), device=device)
-                x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
-            else:
-                z = torch.randn(current_batch_size, latent_dim, 1, 1, device=device)
-                x_M = gan_model(z)
-            image_attack_batches.append(x_M.cpu())
-            del z, x_M
+            
+            if attack_image_type == "original_image":
+                # Generate images using the GAN model
+                if is_stylegan2(gan_model):
+                    z = torch.randn((current_batch_size, latent_dim), device=device)
+                    x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
+                else:
+                    z = torch.randn(current_batch_size, latent_dim, 1, 1, device=device)
+                    x_M = gan_model(z)
+                image_attack_batches.append(x_M.cpu())
+                del z, x_M
+            else:  # random_image
+                # Generate random noise images with same shape as GAN output
+                random_images = torch.rand((current_batch_size,) + image_shape, device=device) * 2 - 1  # Scale to [-1, 1]
+                image_attack_batches.append(random_images.cpu())
+                del random_images
+            
             torch.cuda.empty_cache()
             gc.collect()
 
@@ -393,16 +424,17 @@ def attack_label_based(
     num_steps: int = 500,
     alpha_values: list = None,
     train_surrogate: bool = True,
-    finetune_surrogate: bool = False,  # New switch parameter
+    finetune_surrogate: bool = False,
     rank: int = 0,
     world_size: int = 1,
     momentum: float = 0.9,
+    attack_image_type: str = "original_image",
 ) -> tuple:
     """
     Performs a label-based attack on a watermarked GAN model with optional surrogate fine-tuning.
 
     Args:
-        finetune_surrogate (bool, optional): Whether to fine-tune the surrogate on real decoder outputs. Defaults to False.
+        attack_image_type (str, optional): Type of images to use for attack ("original_image" or "random_image"). Defaults to "original_image".
         ... (other args remain unchanged)
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -410,6 +442,7 @@ def attack_label_based(
         alpha_values = [0.001]
 
     logging.info("Starting attack_label_based function.")
+    logging.info(f"Using {attack_image_type} for attack images.")
 
     gan_model.eval()
     watermarked_model.eval()
@@ -420,7 +453,8 @@ def attack_label_based(
 
     # Generate attack images
     image_attack = generate_attack_images(
-        gan_model, image_attack_size, latent_dim, device, batch_size=100
+        gan_model, image_attack_size, latent_dim, device, batch_size=100,
+        attack_image_type=attack_image_type
     )
     logging.info("Initialized image_attack.")
 

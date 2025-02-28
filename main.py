@@ -59,6 +59,7 @@ def main():
 
     # Attack arguments
     parser.add_argument("--attack_type", type=str, default="base_baseline", choices=["base_baseline", "base_secure", "combined_secure", "fixed_secure"], help="Attack type")
+    parser.add_argument("--attack_image_type", type=str, default="original_image", choices=["original_image", "random_image"], help="Type of images to use for attack")
     parser.add_argument("--train_size", type=int, default=100000, help="training set size for training surrogate decoder")
     parser.add_argument("--image_attack_size", type=int, default=10000, help="size of attack image set")
     parser.add_argument("--surrogate_decoder_model_path", type=str, default=None, help="Path to pre-trained surrogate decoder model")
@@ -334,18 +335,19 @@ def main():
             surrogate_decoder,
             latent_dim,
             device,
-            args.train_size, # note: here, it's per GPU (per DDP's enabling)
+            args.train_size,
             args.image_attack_size,
-            batch_size=args.batch_size_surr, # BS for training the surrogate decoder
-            epochs=1,  # Assuming default from parser if not specified
-            attack_batch_size=args.attack_batch_size_pgd,  # Assuming default from parser if not specified
-            num_steps=args.num_steps_pgd,  # Assuming default from parser if not specified
-            alpha_values=args.alpha_values_pgd,  # Will use default in attack_label_based
+            batch_size=args.batch_size_surr,
+            epochs=1,
+            attack_batch_size=args.attack_batch_size_pgd,
+            num_steps=args.num_steps_pgd,
+            alpha_values=args.alpha_values_pgd,
             train_surrogate=train_surrogate,
             finetune_surrogate=args.finetune_surrogate,
             rank=args.rank,
             world_size=args.world_size if train_surrogate else 1,
-            momentum=args.momentum_pgd,  # Add momentum parameter
+            momentum=args.momentum_pgd,
+            attack_image_type=args.attack_image_type,
         )
 
 
