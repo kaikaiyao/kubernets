@@ -146,10 +146,8 @@ def train_model(
             logging.info(
                 f"Train Iteration {i + 1}: "
                 f"loss: {loss.item():.4f}, "
-                f"d_k_M_hat.max(): {d_k_M_hat.max().item():.4f}, "
-                f"d_k_M_hat.min(): {d_k_M_hat.min().item():.4f}, "
-                f"d_k_M.max(): {d_k_M.max().item():.4f}, "
-                f"d_k_M.min(): {d_k_M.min().item():.4f}"
+                f"d_k_M_hat range: [{d_k_M_hat.min().item():.4f}, {d_k_M_hat.max().item():.4f}], "
+                f"d_k_M range: [{d_k_M.min().item():.4f}, {d_k_M.max().item():.4f}]"
             )
 
         del loss, d_k_M_hat, d_k_M
