@@ -402,9 +402,15 @@ def attack_label_based(
     # Perform PGD attack
     if rank == 0:
         k_attack_scores_mean, k_attack_scores_std = perform_pgd_attack(
-            attack_type,
-            surrogate_decoder, decoder, image_attack, 
-            max_delta, device, num_steps, alpha_values, attack_batch_size
+            attack_type=attack_type,
+            surrogate_decoder=surrogate_decoder,
+            decoder=decoder,
+            image_attack=image_attack,
+            max_delta=max_delta,
+            device=device,
+            num_steps=num_steps,
+            alpha_values=alpha_values,
+            attack_batch_size=attack_batch_size
         )
         logging.info("PGD attack for different alpha values completed.")
 
