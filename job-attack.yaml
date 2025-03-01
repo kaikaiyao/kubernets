@@ -53,7 +53,7 @@ spec:
               
               for run in $(seq 1 $total_runs); do
                 echo "Starting run $run of $total_runs"
-                torchrun --nproc_per_node=4 \
+                torchrun --nproc_per_node=1 \
                         --nnodes=1 \
                         --node_rank=0 \
                         --master_addr=127.0.0.1 \
@@ -73,6 +73,7 @@ spec:
                         --train_size 200000 \
                         --image_attack_size 100 \
                         --num_steps_pgd 100 \
+                        --surrogate_model_path '/nfs-user/data/encryption/surrogate_model_0.pth, /nfs-user/data/encryption/surrogate_model_1.pth, /nfs-user/data/encryption/surrogate_model_2.pth, /nfs-user/data/encryption/surrogate_model_3.pth, /nfs-user/data/encryption/surrogate_model_4.pth, /nfs-user/data/encryption/surrogate_model_5.pth, /nfs-user/data/encryption/surrogate_model_6.pth, /nfs-user/data/encryption/surrogate_model_7.pth, /nfs-user/data/encryption/surrogate_model_8.pth, /nfs-user/data/encryption/surrogate_model_9.pth' \
                         --attack_image_type "original_image" \
                         --alpha_values_pgd "0.0005,0.001,0.005"
 
@@ -92,9 +93,9 @@ spec:
               sleep infinity
           resources:
             limits:
-              nvidia.com/gpu: "4"
-              cpu: "16"
-              memory: "64Gi"
+              nvidia.com/gpu: "1"
+              cpu: "4"
+              memory: "32Gi"
           volumeMounts:
             - name: nfs-user
               mountPath: /nfs-user
