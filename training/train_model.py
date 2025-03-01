@@ -130,6 +130,11 @@ def train_model(
         del k_M, k_M_hat
         torch.cuda.empty_cache()
 
+        # Sigmoid func in the final layer of the decoder is used to make the output range from 0 to 1, so d ranges from 0 to 1,
+        # so the loss is to maximize the difference between the distance of the prediction on the original image and the watermarked image
+        # Note:
+        # 1. the loss is squared to make it more sensitive to the difference
+        # 2. the max is applied to get the maximum difference in all samples in one iteration (batch)
         loss = ((d_k_M - d_k_M_hat).max() + 1) ** 2 
 
         optimizer_M_hat.zero_grad(set_to_none=True)

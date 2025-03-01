@@ -33,13 +33,6 @@ def constrain_image(x_M_hat, x_M, max_delta):
     return x_M_hat_constrained
 
 
-def enhance_contrast(image, factor=1):
-    mean = image.mean()
-    enhanced = (image - mean) * factor + mean
-    enhanced = torch.clamp(enhanced, 0, 1)
-    return enhanced
-
-
 def plot_variables(z, x_M, x_M_hat, k_M, k_M_hat):
     x_M_diff = x_M[0].squeeze() - x_M_hat[0].squeeze()
     tensors = {

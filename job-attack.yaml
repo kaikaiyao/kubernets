@@ -40,7 +40,7 @@ spec:
           - name: NCCL_IB_DISABLE
             value: "1"
           - name: NUM_RUNS
-            value: "1"
+            value: "10"
           command: ["/bin/bash", "-c"]
           args:
             - |
@@ -53,7 +53,7 @@ spec:
               
               for run in $(seq 1 $total_runs); do
                 echo "Starting run $run of $total_runs"
-                torchrun --nproc_per_node=1 \
+                torchrun --nproc_per_node=4 \
                         --nnodes=1 \
                         --node_rank=0 \
                         --master_addr=127.0.0.1 \
@@ -61,7 +61,7 @@ spec:
                         main.py attack \
                         --attack_type "base_secure" \
                         --stylegan2_url "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
-                        --watermarked_model_path '/nfs-user/data/baseline/watermarked_model_final_20250227003117999810.pkl' \
+                        --watermarked_model_path '/nfs-user/data/baseline/watermarked_model_final_20250228163609622902.pkl' \
                         --decoder_model_path '/nfs-user/data/baseline/decoder_model_final_20250228163609622902.pth' \
                         --num_conv_layers 7 \
                         --num_pool_layers 7 \
@@ -73,7 +73,6 @@ spec:
                         --train_size 200000 \
                         --image_attack_size 100 \
                         --num_steps_pgd 100 \
-                        --surrogate_decoder_model_path '/nfs-user/data/baseline/surrogate_decoder_0.pt,/nfs-user/data/baseline/surrogate_decoder_1.pt,/nfs-user/data/baseline/surrogate_decoder_2.pt,/nfs-user/data/baseline/surrogate_decoder_3.pt,/nfs-user/data/baseline/surrogate_decoder_4.pt,/nfs-user/data/baseline/surrogate_decoder_5.pt,/nfs-user/data/baseline/surrogate_decoder_6.pt,/nfs-user/data/baseline/surrogate_decoder_7.pt,/nfs-user/data/baseline/surrogate_decoder_8.pt,/nfs-user/data/baseline/surrogate_decoder_9.pt' \
                         --attack_image_type "original_image" \
                         --alpha_values_pgd "0.0005,0.001,0.005"
 
@@ -93,9 +92,9 @@ spec:
               sleep infinity
           resources:
             limits:
-              nvidia.com/gpu: "1"
-              cpu: "4"
-              memory: "32Gi"
+              nvidia.com/gpu: "4"
+              cpu: "16"
+              memory: "128Gi"
           volumeMounts:
             - name: nfs-user
               mountPath: /nfs-user
