@@ -159,6 +159,38 @@ def generate_attack_images(
         image_shape = sample_image.shape[1:]
         del z, sample_image
 
+        # Define a custom Gaussian blur function
+        def apply_gaussian_blur(images, kernel_size=21, sigma=7.0):
+            # Create a Gaussian kernel
+            def gaussian_kernel(kernel_size, sigma=1.0):
+                x = torch.arange(kernel_size).float() - (kernel_size - 1) / 2
+                x = x.view(1, -1).expand(kernel_size, -1)
+                y = torch.arange(kernel_size).float() - (kernel_size - 1) / 2
+                y = y.view(-1, 1).expand(-1, kernel_size)
+                coefficient = 1.0 / (2 * math.pi * sigma**2)
+                kernel = coefficient * torch.exp(-(x**2 + y**2) / (2 * sigma**2))
+                return kernel / torch.sum(kernel)
+            
+            # Create a 2D Gaussian kernel
+            kernel = gaussian_kernel(kernel_size, sigma)
+            
+            # Expand to 3 channels
+            kernel = kernel.view(1, 1, kernel_size, kernel_size)
+            kernel = kernel.repeat(3, 1, 1, 1)
+            
+            # Apply padding to maintain the same image size
+            padding = (kernel_size - 1) // 2
+            
+            # Apply the kernel to each channel separately to maintain correct color
+            blurred_images = F.conv2d(
+                images, 
+                weight=kernel.to(images.device), 
+                padding=padding,
+                groups=3  # Apply separately to each channel
+            )
+            
+            return blurred_images
+
         for batch_idx in range(num_batches):
             logging.info(f"Generating attack images, batch index = {batch_idx}")
             current_batch_size = min(batch_size, image_attack_size - batch_idx * batch_size)
@@ -174,8 +206,7 @@ def generate_attack_images(
                 
                 if attack_image_type == "blurred_image":
                     # Apply strong Gaussian blur to make images look like from a worse model
-                    # Kernel size 21 with sigma 7 creates a significant blur effect
-                    x_M = F.gaussian_blur(x_M, kernel_size=[21, 21], sigma=[7.0, 7.0])
+                    x_M = apply_gaussian_blur(x_M, kernel_size=21, sigma=7.0)
                     logging.info(f"Applied Gaussian blur to batch {batch_idx}")
                 
                 image_attack_batches.append(x_M.cpu())
