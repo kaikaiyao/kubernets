@@ -1,17 +1,18 @@
 import random
 from typing import Tuple
+import hashlib
+import hmac
 
 import numpy as np
 import torch
 import torch.nn as nn
-from Crypto.Cipher import ChaCha20
 
 from key.key_utils import flip_key
 
 class CryptoCNN(nn.Module):
     """A convolutional neural network with cryptographic weight initialization.
     
-    Uses ChaCha20 encryption for secure parameter initialization with fan-in aware
+    Uses cryptographically-secure PRNG for secure parameter initialization with fan-in aware
     scaling for improved convergence properties.
     
     Args:
@@ -32,25 +33,20 @@ class CryptoCNN(nn.Module):
         self._init_layers_with_scaling(binary_key)
 
     def _init_layers_with_scaling(self, binary_key: bytes) -> None:
-        """Initializes network parameters using encrypted seed with fan-in scaling.
+        """Initializes network parameters using cryptographically-secure PRNG with fan-in scaling.
         
         Args:
-            binary_key: 256-bit secret key for ChaCha20 encryption
+            binary_key: 256-bit secret key for CSPRNG initialization
         """
-        # Generate cryptographic seed
+        # Count total parameters for initialization
         total_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
-        seed_size = total_params * 4  # 4 bytes per float32
-        rng = np.random.default_rng(seed=0)
-        seed = rng.bytes(seed_size)
         
-        # Encrypt seed using ChaCha20
-        chacha_key = binary_key[:32]  # 256-bit key
-        nonce = b'\x00' * 8  # Fixed nonce (cryptographically insecure for actual deployment, used only for reproducibility)
-        cipher = ChaCha20.new(key=chacha_key, nonce=nonce)
-        ciphertext = cipher.encrypt(seed)
+        # Create CSPRNG using HMAC-based extract-and-expand key derivation function (HKDF)
+        # This is a secure way to expand the binary key into the needed random bytes
+        random_bytes = self._generate_csprng_bytes(binary_key, total_params * 4)  # 4 bytes per float32
         
         # Convert to normalized float32 array
-        uint32_vals = np.frombuffer(ciphertext, dtype='>u4')
+        uint32_vals = np.frombuffer(random_bytes, dtype='>u4')
         normalized_floats = uint32_vals.astype(np.float32) / np.float32(0xFFFFFFFF)
         
         # Parameter initialization with fan-in scaling
@@ -73,6 +69,38 @@ class CryptoCNN(nn.Module):
                 scaled_biases = (layer_biases * 2 * bound) - bound
                 layer.bias.data = torch.from_numpy(scaled_biases.reshape(layer.bias.shape)).float()
                 pointer += bias_size
+    
+    def _generate_csprng_bytes(self, key: bytes, num_bytes: int) -> bytes:
+        """Generate pseudorandom bytes using a cryptographically secure method.
+        
+        Uses HMAC-SHA256 in counter mode to generate random bytes from the key.
+        This is similar to how HKDF expansion works.
+        
+        Args:
+            key: The cryptographic key (256 bits)
+            num_bytes: Number of random bytes to generate
+            
+        Returns:
+            Random bytes of specified length
+        """
+        result = bytearray()
+        counter = 0
+        
+        # Generate bytes in chunks using HMAC in counter mode
+        while len(result) < num_bytes:
+            # Create counter value as 4-byte big-endian
+            counter_bytes = counter.to_bytes(4, byteorder='big')
+            
+            # Generate a block of pseudorandom bytes using HMAC-SHA256
+            h = hmac.new(key, counter_bytes, hashlib.sha256)
+            block = h.digest()
+            
+            # Add the block to our result
+            result.extend(block)
+            counter += 1
+        
+        # Truncate to the exact requested size
+        return bytes(result[:num_bytes])
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through the network."""
@@ -95,6 +123,7 @@ def generate_mask_secret_key(
         image_shape: Input image shape tuple (batch, channels, height, width)
         seed: Random seed for key generation
         device: Target device for the mask generator
+        flip_key_type: Type of key bit flipping to apply
     
     Returns:
         Initialized and frozen CNN mask generator
@@ -105,7 +134,7 @@ def generate_mask_secret_key(
     random.seed(seed)
     binary_key = random.getrandbits(256).to_bytes(32, 'big')
 
-    # Flip the encryption key (for evaluation)
+    # Flip the key (for evaluation)
     if flip_key_type == "none":
         pass
     else:
