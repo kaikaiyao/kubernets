@@ -30,8 +30,20 @@ while read -r line; do
     fi
 done < <(echo "$pods" | jq -c '.items[]')
 
-# Output the GPU usage per user
-echo "USER                 GPUs"
+# Find the longest username for proper formatting
+max_length=4  # Start with minimum "USER" length
 for user in "${!gpu_usage[@]}"; do
-    echo "$user                 ${gpu_usage[$user]}"
+    user_length=${#user}
+    if [[ $user_length -gt $max_length ]]; then
+        max_length=$user_length
+    fi
+done
+
+# Add padding for better visual separation
+column_width=$((max_length + 4))
+
+# Output the GPU usage per user with proper alignment
+printf "%-${column_width}s %s\n" "USER" "GPUs"
+for user in "${!gpu_usage[@]}"; do
+    printf "%-${column_width}s %s\n" "$user" "${gpu_usage[$user]}"
 done
