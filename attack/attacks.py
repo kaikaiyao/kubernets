@@ -139,7 +139,7 @@ def generate_attack_images(
         latent_dim: Dimension of the latent space
         device: Device to use for computation
         batch_size: Batch size for generation
-        attack_image_type: Type of images to generate ("original_image" or "random_image")
+        attack_image_type: Type of images to generate ("original_image", "random_image", or "blurred_image")
     
     Returns:
         torch.Tensor: Generated attack images
@@ -163,7 +163,7 @@ def generate_attack_images(
             logging.info(f"Generating attack images, batch index = {batch_idx}")
             current_batch_size = min(batch_size, image_attack_size - batch_idx * batch_size)
             
-            if attack_image_type == "original_image":
+            if attack_image_type == "original_image" or attack_image_type == "blurred_image":
                 # Generate images using the GAN model
                 if is_stylegan2(gan_model):
                     z = torch.randn((current_batch_size, latent_dim), device=device)
@@ -171,6 +171,13 @@ def generate_attack_images(
                 else:
                     z = torch.randn(current_batch_size, latent_dim, 1, 1, device=device)
                     x_M = gan_model(z)
+                
+                if attack_image_type == "blurred_image":
+                    # Apply strong Gaussian blur to make images look like from a worse model
+                    # Kernel size 21 with sigma 7 creates a significant blur effect
+                    x_M = F.gaussian_blur(x_M, kernel_size=[21, 21], sigma=[7.0, 7.0])
+                    logging.info(f"Applied Gaussian blur to batch {batch_idx}")
+                
                 image_attack_batches.append(x_M.cpu())
                 del z, x_M
             else:  # random_image
@@ -562,7 +569,7 @@ def attack_label_based(
     Performs a label-based attack on a watermarked GAN model with optional surrogate fine-tuning.
 
     Args:
-        attack_image_type (str, optional): Type of images to use for attack ("original_image" or "random_image"). Defaults to "original_image".
+        attack_image_type (str, optional): Type of images to use for attack ("original_image", "random_image", or "blurred_image"). Defaults to "original_image".
         ... (other args remain unchanged)
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

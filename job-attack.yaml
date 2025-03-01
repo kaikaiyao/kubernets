@@ -62,7 +62,7 @@ spec:
                         --attack_type "base_baseline" \
                         --stylegan2_url "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
                         --watermarked_model_path '/nfs-user/data/baseline/watermarked_model_final_20250227003117999810.pkl' \
-                        --decoder_model_path '/nfs-user/data/baseline/decoder_model_final_20250228163609622902.pth' \
+                        --decoder_model_path '/nfs-user/data/baseline/decoder_model_final_20250227003117999810.pth' \
                         --num_conv_layers 7 \
                         --num_pool_layers 7 \
                         --initial_channels 64 \
@@ -74,7 +74,7 @@ spec:
                         --image_attack_size 100 \
                         --num_steps_pgd 100 \
                         --surrogate_decoder_model_path '/nfs-user/data/baseline/surrogate_decoder_0.pt,/nfs-user/data/baseline/surrogate_decoder_1.pt,/nfs-user/data/baseline/surrogate_decoder_2.pt,/nfs-user/data/baseline/surrogate_decoder_3.pt,/nfs-user/data/baseline/surrogate_decoder_4.pt,/nfs-user/data/baseline/surrogate_decoder_5.pt,/nfs-user/data/baseline/surrogate_decoder_6.pt,/nfs-user/data/baseline/surrogate_decoder_7.pt,/nfs-user/data/baseline/surrogate_decoder_8.pt,/nfs-user/data/baseline/surrogate_decoder_9.pt' \
-                        --attack_image_type "random_image" \
+                        --attack_image_type "blurred_image" \
                         --alpha_values_pgd "0.0005,0.001,0.005"
 
                 exit_status=$?

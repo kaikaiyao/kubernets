@@ -59,7 +59,7 @@ def main():
 
     # Attack arguments
     parser.add_argument("--attack_type", type=str, default="base_baseline", choices=["base_baseline", "base_secure", "combined_secure", "fixed_secure"], help="Attack type")
-    parser.add_argument("--attack_image_type", type=str, default="original_image", choices=["original_image", "random_image"], help="Type of images to use for attack")
+    parser.add_argument("--attack_image_type", type=str, default="original_image", choices=["original_image", "random_image", "blurred_image"], help="Type of images to use for attack")
     parser.add_argument("--train_size", type=int, default=100000, help="training set size for training surrogate decoder")
     parser.add_argument("--image_attack_size", type=int, default=10000, help="size of attack image set")
     parser.add_argument("--surrogate_decoder_model_paths", type=str, help="Comma-separated list of paths to pre-trained surrogate decoder models")
