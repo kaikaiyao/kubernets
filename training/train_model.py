@@ -37,6 +37,7 @@ def train_model(
     initial_loss_history=None,
     rank=0,
     world_size=1,
+    key_type="csprng",
 ):
     if rank == 0:
         logging.info(f"World size: {world_size}")
@@ -74,7 +75,7 @@ def train_model(
 
         if mask_switch_on:
             if i == 0 or start_iter != 0:
-                k_mask = generate_mask_secret_key(x_M_hat_constrained.shape, seed_key, device=device)
+                k_mask = generate_mask_secret_key(x_M_hat_constrained.shape, seed_key, device=device, key_type=key_type)
 
             x_M_original = x_M.clone().detach()
             x_M_hat_constrained_original = x_M_hat_constrained.clone().detach()
@@ -196,6 +197,7 @@ def train_model(
                     mask_switch_on,
                     seed_key,
                     flip_key_type="none",
+                    key_type=key_type,
                 )
             auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
         

@@ -56,6 +56,7 @@ def main():
     parser.add_argument("--decoder_model_path", type=str, default="decoder_model.pth", help="Path to the decoder model state dictionary")
     parser.add_argument("--plotting", type=bool, default=False, help="To plot the results of the evaluation")
     parser.add_argument("--flip_key_type", type=str, default="none", choices=["none", "1", "10", "random"], help="Whether and how to flip the encryption key")
+    parser.add_argument("--key_type", type=str, default="csprng", choices=["encryption", "csprng"], help="Type of key generation method (encryption or csprng)")
 
     # Attack arguments
     parser.add_argument("--attack_type", type=str, default="base_baseline", choices=["base_baseline", "base_secure", "combined_secure", "fixed_secure"], help="Attack type")
@@ -181,6 +182,7 @@ def main():
             initial_loss_history,
             args.rank,
             args.world_size,
+            args.key_type,
         )
 
     elif args.mode == "eval":
@@ -221,6 +223,7 @@ def main():
             args.mask_switch_on,
             args.seed_key,
             args.flip_key_type,
+            key_type=args.key_type,
         )
 
         auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
@@ -303,6 +306,7 @@ def main():
                     image_shape=(1, 3, 256, 256),
                     seed=2024,
                     device=device,
+                    key_type=args.key_type,
                 )
                 surrogate_decoder = CombinedModel(
                     input_channels=3,
@@ -360,6 +364,7 @@ def main():
             world_size=args.world_size if train_surrogate else 1,
             momentum=args.momentum_pgd,
             attack_image_type=args.attack_image_type,
+            key_type=args.key_type,
         )
 
 

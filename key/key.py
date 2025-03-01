@@ -6,22 +6,24 @@ import hmac
 import numpy as np
 import torch
 import torch.nn as nn
+from Crypto.Cipher import ChaCha20
 
 from key.key_utils import flip_key
 
 class CryptoCNN(nn.Module):
     """A convolutional neural network with cryptographic weight initialization.
     
-    Uses cryptographically-secure PRNG for secure parameter initialization with fan-in aware
-    scaling for improved convergence properties.
+    Uses either ChaCha20 encryption or HMAC-based CSPRNG for secure parameter initialization 
+    with fan-in aware scaling for improved convergence properties.
     
     Args:
         input_channels: Number of input channels
         output_channels: Number of output channels
         binary_key: 256-bit secret key for parameter initialization
+        key_type: Type of key generation ("encryption" or "csprng")
     """
 
-    def __init__(self, input_channels: int, output_channels: int, binary_key: bytes):
+    def __init__(self, input_channels: int, output_channels: int, binary_key: bytes, key_type: str = "csprng"):
         super().__init__()
         self.conv1 = nn.Conv2d(input_channels, 64, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
@@ -30,9 +32,55 @@ class CryptoCNN(nn.Module):
         self.conv5 = nn.Conv2d(64, output_channels, kernel_size=3, padding=1)
         self.relu = nn.ReLU()
 
-        self._init_layers_with_scaling(binary_key)
+        if key_type == "encryption":
+            self._init_layers_with_encryption(binary_key)
+        else:  # default to csprng
+            self._init_layers_with_csprng(binary_key)
 
-    def _init_layers_with_scaling(self, binary_key: bytes) -> None:
+    def _init_layers_with_encryption(self, binary_key: bytes) -> None:
+        """Initializes network parameters using encrypted seed with fan-in scaling.
+        
+        Args:
+            binary_key: 256-bit secret key for ChaCha20 encryption
+        """
+        # Generate cryptographic seed
+        total_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        seed_size = total_params * 4  # 4 bytes per float32
+        rng = np.random.default_rng(seed=0)
+        seed = rng.bytes(seed_size)
+        
+        # Encrypt seed using ChaCha20
+        chacha_key = binary_key[:32]  # 256-bit key
+        nonce = b'\x00' * 8  # Fixed nonce (cryptographically insecure for actual deployment, used only for reproducibility)
+        cipher = ChaCha20.new(key=chacha_key, nonce=nonce)
+        ciphertext = cipher.encrypt(seed)
+        
+        # Convert to normalized float32 array
+        uint32_vals = np.frombuffer(ciphertext, dtype='>u4')
+        normalized_floats = uint32_vals.astype(np.float32) / np.float32(0xFFFFFFFF)
+        
+        # Parameter initialization with fan-in scaling
+        pointer = 0
+        for layer in [self.conv1, self.conv2, self.conv3, self.conv4, self.conv5]:
+            fan_in = layer.in_channels * layer.kernel_size[0] * layer.kernel_size[1]
+            bound = 1.0 / np.sqrt(fan_in)
+            
+            # Weight initialization
+            weight_size = np.prod(layer.weight.shape)
+            layer_weights = normalized_floats[pointer:pointer + weight_size]
+            scaled_weights = (layer_weights * 2 * bound) - bound
+            layer.weight.data = torch.from_numpy(scaled_weights.reshape(layer.weight.shape)).float()
+            pointer += weight_size
+            
+            # Bias initialization
+            if layer.bias is not None:
+                bias_size = np.prod(layer.bias.shape)
+                layer_biases = normalized_floats[pointer:pointer + bias_size]
+                scaled_biases = (layer_biases * 2 * bound) - bound
+                layer.bias.data = torch.from_numpy(scaled_biases.reshape(layer.bias.shape)).float()
+                pointer += bias_size
+
+    def _init_layers_with_csprng(self, binary_key: bytes) -> None:
         """Initializes network parameters using cryptographically-secure PRNG with fan-in scaling.
         
         Args:
@@ -116,6 +164,7 @@ def generate_mask_secret_key(
     seed: int,
     device: str = 'cpu',
     flip_key_type: str = 'none',
+    key_type: str = 'csprng',
 ) -> nn.Module:
     """Generates a frozen CNN-based mask generator with cryptographic initialization.
     
@@ -124,6 +173,7 @@ def generate_mask_secret_key(
         seed: Random seed for key generation
         device: Target device for the mask generator
         flip_key_type: Type of key bit flipping to apply
+        key_type: Type of key generation method to use ("encryption" or "csprng")
     
     Returns:
         Initialized and frozen CNN mask generator
@@ -141,7 +191,7 @@ def generate_mask_secret_key(
         binary_key = flip_key(input_key=binary_key, flip_key_type=flip_key_type)
 
     # Create and freeze CNN
-    mask_generator = CryptoCNN(channels, channels, binary_key).to(device)
+    mask_generator = CryptoCNN(channels, channels, binary_key, key_type).to(device)
     for param in mask_generator.parameters():
         param.requires_grad = False
         

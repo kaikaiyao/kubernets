@@ -27,7 +27,8 @@ def evaluate_model(
     mask_switch_on: bool,
     seed_key: int,
     flip_key_type: str,
-    batch_size: int = 8
+    batch_size: int = 8,
+    key_type: str = "csprng"
 ) -> Tuple[float, float, float, float, float, int]:
     """
     Evaluate watermarking model performance with comprehensive metrics
@@ -82,7 +83,8 @@ def evaluate_model(
             metrics=metrics,
             plotting=plotting,
             flip_key_type=flip_key_type,
-            num_images=num_images
+            num_images=num_images,
+            key_type=key_type
         )
 
     # Calculate final metrics
@@ -115,7 +117,8 @@ def process_batch(
     metrics: dict,
     plotting: bool,
     flip_key_type: str,
-    num_images: int
+    num_images: int,
+    key_type: str = "csprng"
 ) -> None:
     """Process a single batch of images"""
     current_batch_size = min(batch_size, num_images - batch_idx * batch_size)
@@ -136,7 +139,7 @@ def process_batch(
 
     # Process watermark detection
     process_watermark_detection(
-        x_M, x_M_hat, x_rand, decoder, mask_switch_on, seed_key, device, metrics, current_batch_size, flip_key_type
+        x_M, x_M_hat, x_rand, decoder, mask_switch_on, seed_key, device, metrics, current_batch_size, flip_key_type, key_type
     )
 
     # Update FID metric
@@ -168,11 +171,11 @@ def calculate_delta_metrics(x_M, x_M_hat, batch_size, lpips_loss):
         'lpips_losses': lpips_loss(x_M_hat, x_M).squeeze().tolist()
     }
 
-def process_watermark_detection(x_M, x_M_hat, x_rand, decoder, mask_switch_on, seed_key, device, metrics, batch_size, flip_key_type):
+def process_watermark_detection(x_M, x_M_hat, x_rand, decoder, mask_switch_on, seed_key, device, metrics, batch_size, flip_key_type, key_type="csprng"):
     """Process watermark detection and score calculation for original, watermarked, and random images"""
     # Apply mask if enabled
     if mask_switch_on:
-        k_mask = generate_mask_secret_key(x_M_hat.shape, seed_key, device=device, flip_key_type=flip_key_type)
+        k_mask = generate_mask_secret_key(x_M_hat.shape, seed_key, device=device, flip_key_type=flip_key_type, key_type=key_type)
         x_M_mask = mask_image_with_key(x_M, k_mask)
         x_M_hat_mask = mask_image_with_key(x_M_hat, k_mask)
         x_rand_mask = mask_image_with_key(x_rand, k_mask)

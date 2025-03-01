@@ -475,6 +475,7 @@ def perform_pgd_attack(
     attack_batch_size: int = 10,
     momentum: float = 0.9,
     ensemble_weights: list = None,
+    key_type: str = "csprng",
 ) -> tuple:
     """
     Perform PGD attack with optional momentum using multiple surrogate decoders.
@@ -545,7 +546,7 @@ def perform_pgd_attack(
                 if attack_type in ["base_baseline"]:
                     k_attack_batch = decoder(image_attack_batch)
                 elif attack_type in ["base_secure", "combined_secure", "fixed_secure"]:
-                    k_mask = generate_mask_secret_key(image_attack_batch.shape, 2024, device=device)
+                    k_mask = generate_mask_secret_key(image_attack_batch.shape, 2024, device=device, key_type=key_type)
                     k_attack_batch = decoder(mask_image_with_key(image_attack_batch, k_mask))
                 else:
                     logging.error("attack_type is undefined.")
@@ -595,6 +596,7 @@ def attack_label_based(
     world_size: int = 1,
     momentum: float = 0.9,
     attack_image_type: str = "original_image",
+    key_type: str = "csprng",
 ) -> tuple:
     """
     Performs a label-based attack on a watermarked GAN model with optional surrogate fine-tuning.
@@ -673,7 +675,8 @@ def attack_label_based(
             num_steps=num_steps,
             alpha_values=alpha_values,
             attack_batch_size=attack_batch_size,
-            momentum=momentum
+            momentum=momentum,
+            key_type=key_type
         )
         logging.info("PGD attack for different alpha values completed.")
         return k_attack_scores_mean, k_attack_scores_std

@@ -60,6 +60,7 @@ spec:
                         --master_port=12345 \
                         main.py attack \
                         --attack_type "base_secure" \
+                        --key_type "encryption" \
                         --stylegan2_url "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
                         --watermarked_model_path '/nfs-user/data/encryption/watermarked_model_final_20250227193206752601.pkl' \
                         --decoder_model_path '/nfs-user/data/encryption/decoder_model_final_20250227193206752601.pth' \
