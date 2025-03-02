@@ -44,27 +44,22 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
-              # Generate a random identifier for tracking
-              RANDOM_ID=$(date +%Y%m%d%H%M%S)_$((RANDOM + 10000))
-              echo "Generated tracking ID: $RANDOM_ID"
+              # First create results directory for logs
+              mkdir -p /workspace/kubernets/results
               
-              # Create logs directory if it doesn't exist
-              mkdir -p /nfs-user/logs
-              
-              # Define log file path
-              LOG_FILE="/nfs-user/logs/${RANDOM_ID}.log"
+              # Use hostname for log file name
+              HOSTNAME=$(hostname)
+              LOG_FILE="/workspace/kubernets/results/${HOSTNAME}.log"
               echo "Logging execution to: $LOG_FILE"
               
               # Start logging basic info
               {
-                echo "====== EXECUTION LOG - ID: $RANDOM_ID ======"
+                echo "====== EXECUTION LOG - HOSTNAME: $HOSTNAME ======"
                 echo "Job started at: $(date)"
                 echo "Username: ${USER}"
-                echo "Hostname: $(hostname)"
               } | tee -a "$LOG_FILE"
               
               echo "Running experiments sequentially" | tee -a "$LOG_FILE"
-              mkdir -p /workspace/kubernets/results
               curl -o ffhq70k-paper256-ada.pkl "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" | tee -a "$LOG_FILE"
               
               total_runs=${NUM_RUNS:-1}
