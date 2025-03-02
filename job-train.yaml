@@ -69,7 +69,7 @@ spec:
                       main.py train \
                       --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
                       --batch_size=8 \
-                      --n_iterations=200000 \
+                      --n_iterations=500000 \
                       --num_eval_samples=1000 \
                       --num_conv_layers=7 \
                       --num_pool_layers=7 \
@@ -80,6 +80,7 @@ spec:
                       --key_type "csprng" \
                       --max_delta=$MAX_DELTA \
                       --mask_switch_on \
+                      --resume_checkpoint='/nfs-user/data/csprng/decoder_model_final_20250301122140388952.pth' \
                       --saving_path=results
               exit_status=$?
               echo "Python script finished with exit status $exit_status, sleeping indefinitely"
