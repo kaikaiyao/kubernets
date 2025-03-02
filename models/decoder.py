@@ -27,7 +27,7 @@ class ResidualBlock(nn.Module):
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, 
                                stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, 
                                stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(out_channels)
@@ -47,7 +47,7 @@ class ResidualBlock(nn.Module):
         if self.downsample is not None:
             identity = self.downsample(x)
         
-        out += identity
+        out = out + identity
         out = self.relu(out)
         
         return out
@@ -153,10 +153,10 @@ class FlexibleDecoder(nn.Module):
                     if self.use_batchnorm:
                         layers.append(nn.Conv2d(in_channels, current_channels, kernel_size=3, padding=1))
                         layers.append(nn.BatchNorm2d(current_channels))
-                        layers.append(nn.ReLU(inplace=True))
+                        layers.append(nn.ReLU(inplace=False))
                     else:
                         layers.append(nn.Conv2d(in_channels, current_channels, kernel_size=3, padding=1))
-                        layers.append(nn.ReLU(inplace=True))
+                        layers.append(nn.ReLU(inplace=False))
                     
                     layers.append(MCDropout(p=self.dropout_rate))
                     in_channels = current_channels
@@ -167,10 +167,10 @@ class FlexibleDecoder(nn.Module):
                     if self.use_batchnorm:
                         layers.append(nn.Conv2d(in_channels, current_channels, kernel_size=3, padding=1))
                         layers.append(nn.BatchNorm2d(current_channels))
-                        layers.append(nn.ReLU(inplace=True))
+                        layers.append(nn.ReLU(inplace=False))
                     else:
                         layers.append(nn.Conv2d(in_channels, current_channels, kernel_size=3, padding=1))
-                        layers.append(nn.ReLU(inplace=True))
+                        layers.append(nn.ReLU(inplace=False))
                     
                     layers.append(MCDropout(p=self.dropout_rate))
                     in_channels = current_channels
@@ -199,10 +199,12 @@ class FlexibleDecoder(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        # Apply random input jitter during training AND inference for adversarial robustness
+        # Fix random input jittering to avoid in-place operations
         if random.random() < 0.5:
-            x = x + torch.randn_like(x) * 0.1
-            x = torch.clamp(x, 0, 1)  # Ensure pixel values remain valid
+            # Create a new tensor instead of modifying in-place
+            noise = torch.randn_like(x) * 0.1
+            x_jittered = x + noise
+            x = torch.clamp(x_jittered, 0, 1)  # Using out-of-place clamp
         
         x = self.features(x)
         x = self.classifier(x)
