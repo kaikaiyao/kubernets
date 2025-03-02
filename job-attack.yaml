@@ -40,61 +40,92 @@ spec:
           - name: NCCL_IB_DISABLE
             value: "1"
           - name: NUM_RUNS
-            value: "1"
+            value: "10"
           command: ["/bin/bash", "-c"]
           args:
             - |
-              echo "Running experiments sequentially"
+              # Generate a random identifier for tracking
+              RANDOM_ID=$(date +%Y%m%d%H%M%S)_$((RANDOM + 10000))
+              echo "Generated tracking ID: $RANDOM_ID"
+              
+              # Create logs directory if it doesn't exist
+              mkdir -p /nfs-user/logs
+              
+              # Define log file path
+              LOG_FILE="/nfs-user/logs/${RANDOM_ID}.log"
+              echo "Logging execution to: $LOG_FILE"
+              
+              # Start logging basic info
+              {
+                echo "====== EXECUTION LOG - ID: $RANDOM_ID ======"
+                echo "Job started at: $(date)"
+                echo "Username: ${USER}"
+                echo "Hostname: $(hostname)"
+              } | tee -a "$LOG_FILE"
+              
+              echo "Running experiments sequentially" | tee -a "$LOG_FILE"
               mkdir -p /workspace/kubernets/results
-              curl -o ffhq70k-paper256-ada.pkl "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl"
+              curl -o ffhq70k-paper256-ada.pkl "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" | tee -a "$LOG_FILE"
               
               total_runs=${NUM_RUNS:-1}
-              echo "Will perform $total_runs runs"
+              echo "Will perform $total_runs runs" | tee -a "$LOG_FILE"
               
-              for run in $(seq 1 $total_runs); do
-                echo "Starting run $run of $total_runs"
-                torchrun --nproc_per_node=1 \
-                        --nnodes=1 \
-                        --node_rank=0 \
-                        --master_addr=127.0.0.1 \
-                        --master_port=12345 \
-                        main.py attack \
-                        --attack_type "base_secure" \
-                        --key_type "encryption" \
-                        --stylegan2_url "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
-                        --watermarked_model_path '/nfs-user/data/encryption/watermarked_model_final_20250227193206752601.pkl' \
-                        --decoder_model_path '/nfs-user/data/encryption/decoder_model_final_20250227193206752601.pth' \
-                        --num_conv_layers 7 \
-                        --num_pool_layers 7 \
-                        --initial_channels 64 \
-                        --num_conv_layers_surr 7 \
-                        --num_pool_layers_surr 7 \
-                        --initial_channels_surr 64 \
-                        --max_delta 0.05 \
-                        --train_size 200000 \
-                        --image_attack_size 100 \
-                        --num_steps_pgd 100 \
-                        --surrogate_decoder_model_path '/nfs-user/data/encryption/surrogate_decoder_0.pt,/nfs-user/data/encryption/surrogate_decoder_1.pt,/nfs-user/data/encryption/surrogate_decoder_2.pt,/nfs-user/data/encryption/surrogate_decoder_3.pt,/nfs-user/data/encryption/surrogate_decoder_4.pt,/nfs-user/data/encryption/surrogate_decoder_5.pt,/nfs-user/data/encryption/surrogate_decoder_6.pt,/nfs-user/data/encryption/surrogate_decoder_7.pt,/nfs-user/data/encryption/surrogate_decoder_8.pt,/nfs-user/data/encryption/surrogate_decoder_9.pt' \
-                        --attack_image_type "blurred_image" \
-                        --alpha_values_pgd "0.0005,0.001,0.005"
+              # Enable command printing and error checking for detailed logging
+              set -x
+              
+              # Main execution block - this will be logged due to set -x
+              {
+                for run in $(seq 1 $total_runs); do
+                  echo "Starting run $run of $total_runs"
+                  torchrun --nproc_per_node=8 \
+                          --nnodes=1 \
+                          --node_rank=0 \
+                          --master_addr=127.0.0.1 \
+                          --master_port=12345 \
+                          main.py attack \
+                          --attack_type "base_secure" \
+                          --key_type "csprng" \
+                          --stylegan2_url "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
+                          --watermarked_model_path '/nfs-user/data/csprng/watermarked_model_final_20250301122140388952.pkl' \
+                          --decoder_model_path '/nfs-user/data/csprng/decoder_model_final_20250301122140388952.pth' \
+                          --num_conv_layers 7 \
+                          --num_pool_layers 7 \
+                          --initial_channels 64 \
+                          --num_conv_layers_surr 7 \
+                          --num_pool_layers_surr 7 \
+                          --initial_channels_surr 64 \
+                          --max_delta 0.05 \
+                          --train_size 200000 \
+                          --image_attack_size 100 \
+                          --num_steps_pgd 100 \
+                          --surrogate_decoder_model_path '/nfs-user/data/csprng/surrogate_decoder_0.pt,/nfs-user/data/csprng/surrogate_decoder_1.pt,/nfs-user/data/csprng/surrogate_decoder_2.pt,/nfs-user/data/csprng/surrogate_decoder_3.pt,/nfs-user/data/csprng/surrogate_decoder_4.pt,/nfs-user/data/csprng/surrogate_decoder_5.pt,/nfs-user/data/csprng/surrogate_decoder_6.pt,/nfs-user/data/csprng/surrogate_decoder_7.pt,/nfs-user/data/csprng/surrogate_decoder_8.pt,/nfs-user/data/csprng/surrogate_decoder_9.pt' \
+                          --attack_image_type "blurred_image" \
+                          --alpha_values_pgd "0.0005,0.001,0.005"
 
-                exit_status=$?
-                echo "Run $run finished with exit status $exit_status"
-                
-                if [ $exit_status -ne 0 ]; then
-                  echo "Run $run failed with exit status $exit_status"
-                  exit $exit_status
-                fi
-                
-                echo "Waiting 30 seconds before next run..."
-                sleep 30
-              done
+                  exit_status=$?
+                  echo "Run $run finished with exit status $exit_status"
+                  
+                  if [ $exit_status -ne 0 ]; then
+                    echo "Run $run failed with exit status $exit_status"
+                    exit $exit_status
+                  fi
+                  
+                  echo "Waiting 30 seconds before next run..."
+                  sleep 30
+                done
+              } 2>&1 | tee -a "$LOG_FILE"
               
-              echo "All runs completed successfully"
+              # Disable command printing to avoid cluttering the rest of the output
+              set +x
+              
+              echo "All runs completed successfully" | tee -a "$LOG_FILE"
+              echo "Log file saved to: $LOG_FILE" | tee -a "$LOG_FILE"
+              echo "Job completed at: $(date)" | tee -a "$LOG_FILE"
+              
               sleep infinity
           resources:
             limits:
-              nvidia.com/gpu: "1"
+              nvidia.com/gpu: "8"
               cpu: "4"
               memory: "32Gi"
           volumeMounts:
