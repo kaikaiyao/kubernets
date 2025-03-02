@@ -77,9 +77,8 @@ spec:
                       --lr_M_hat=2e-4 \
                       --lr_D=2e-4 \
                       --seed_key=2024 \
-                      --key_type "csprng" \
                       --max_delta=$MAX_DELTA \
-                      --mask_switch_on \
+                      --mask_switch_off \
                       --saving_path=results
               exit_status=$?
               echo "Python script finished with exit status $exit_status, sleeping indefinitely"
