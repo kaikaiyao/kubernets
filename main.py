@@ -144,7 +144,12 @@ def main():
         )
 
         # Optimizers
-        optimizer_D = torch.optim.Adagrad(decoder.parameters(), lr=args.lr_D)
+        optimizer_D = torch.optim.Adam(
+            decoder.parameters(), 
+            lr=args.lr_D * 50.0,  # Much higher learning rate
+            weight_decay=1e-4,    # Add weight decay
+            betas=(0.9, 0.999)    # Standard Adam parameters
+        )
         optimizer_M_hat = torch.optim.Adagrad(watermarked_model.parameters(), lr=args.lr_M_hat)
 
         # Load checkpoint
@@ -185,12 +190,17 @@ def main():
             )
             
             # Create a new optimizer for the decoder
-            # Use a higher learning rate for z-dependent training to accelerate learning
-            optimizer_D = torch.optim.Adagrad(decoder.parameters(), lr=args.lr_D * 10.0)
+            # Switch to Adam with weight decay for better optimization
+            optimizer_D = torch.optim.Adam(
+                decoder.parameters(), 
+                lr=args.lr_D * 50.0,  # Much higher learning rate
+                weight_decay=1e-4,    # Add weight decay
+                betas=(0.9, 0.999)    # Standard Adam parameters
+            )
             
             if args.rank == 0:
                 logging.info(f"Created decoder with z-dependent training mode, {args.num_classes} classes")
-                logging.info(f"Using increased learning rate for decoder: {args.lr_D * 10.0}")
+                logging.info(f"Using Adam optimizer with lr={args.lr_D * 50.0}, weight_decay=1e-4")
             
             # Create the fixed z classifier for latent vector classification
             z_classifier = create_z_classifier_model(
@@ -260,6 +270,8 @@ def main():
 
         logging.info(f"Plotting: {args.plotting}")
         
+        if not args.z_dependant_training:
+            z_classifier = None
         eval_results = evaluate_model(
             args.num_eval_samples,
             gan_model,

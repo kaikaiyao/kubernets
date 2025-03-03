@@ -41,14 +41,51 @@ class FlexibleDecoder(nn.Module):
         
         # Create classifier based on mode
         if z_dependant_mode:
+            # Create a more powerful classifier for z-dependent mode
+            # Use batch normalization and residual connections
+            class ResidualBlock(nn.Module):
+                def __init__(self, channels):
+                    super(ResidualBlock, self).__init__()
+                    self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+                    self.bn1 = nn.BatchNorm2d(channels)
+                    self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+                    self.bn2 = nn.BatchNorm2d(channels)
+                
+                def forward(self, x):
+                    residual = x
+                    out = F.relu(self.bn1(self.conv1(x)))
+                    out = self.bn2(self.conv2(out))
+                    out += residual
+                    out = F.relu(out)
+                    return out
+            
+            # Replace the features with a better network
+            new_features = []
+            new_features.extend(list(self.features))
+            
+            # Add more power with residual blocks at the end
+            last_channels = self.final_num_channels
+            new_features.append(ResidualBlock(last_channels))
+            new_features.append(ResidualBlock(last_channels))
+            
+            self.features = nn.Sequential(*new_features)
+            
+            # More powerful classifier head
             self.classifier = nn.Sequential(
+                nn.AdaptiveAvgPool2d(1),
                 nn.Flatten(),
-                nn.Dropout(0.3),  # Add dropout for better regularization
-                nn.Linear(self.final_num_channels, 256),  # Add intermediate layer
-                nn.ReLU(),
-                nn.Dropout(0.3),  # More dropout
+                nn.BatchNorm1d(self.final_num_channels),
+                nn.Dropout(0.3),
+                nn.Linear(self.final_num_channels, 512),
+                nn.BatchNorm1d(512),
+                nn.LeakyReLU(0.2),
+                nn.Dropout(0.5),
+                nn.Linear(512, 256),
+                nn.BatchNorm1d(256),
+                nn.LeakyReLU(0.2),
+                nn.Dropout(0.5),
                 nn.Linear(256, num_classes),
-                # Remove softmax - it's better to use raw logits with CrossEntropyLoss
+                # No softmax - raw logits for CrossEntropyLoss
             )
         else:
             self.classifier = nn.Sequential(

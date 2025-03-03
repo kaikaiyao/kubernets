@@ -13,6 +13,7 @@ from key.key import generate_mask_secret_key, mask_image_with_key
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+import math
 
 
 def train_model(
@@ -60,13 +61,38 @@ def train_model(
     if z_dependant_training:
         # Use label smoothing for better learning signal
         criterion = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
-        logging.info("Using CrossEntropyLoss with label smoothing for z-dependent training")
+        if rank == 0:
+            logging.info("Using CrossEntropyLoss with label smoothing for z-dependent training")
     else:
         criterion = torch.nn.BCELoss()
+        
+    # For z-dependent training, let's use a cyclical learning rate schedule
+    if z_dependant_training:
+        # Create learning rate schedulers
+        def cosine_annealing_with_warmup(step, total_steps, warmup_steps=500, min_lr=1e-6, max_lr=1e-2):
+            # Warmup phase
+            if step < warmup_steps:
+                return float(step) / float(max(1, warmup_steps)) * max_lr
+            # Cosine annealing phase
+            return min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(math.pi * (step - warmup_steps) / (total_steps - warmup_steps)))
+        
+        if rank == 0:
+            logging.info(f"Using cosine annealing LR schedule with warmup for z-dependent training")
 
     for i in range(start_iter, n_iterations):
         torch.cuda.empty_cache()
         gc.collect()
+        
+        # Update learning rate for z-dependent training
+        if z_dependant_training:
+            # Compute new learning rate
+            new_lr = cosine_annealing_with_warmup(i, n_iterations)
+            # Apply learning rate
+            for param_group in optimizer_D.param_groups:
+                param_group['lr'] = new_lr
+                
+            if i % 50 == 0 and rank == 0:
+                logging.info(f"Current learning rate: {new_lr:.6f}")
 
         # Generate different noise on each device
         torch.manual_seed(seed_key + i * world_size + rank)
@@ -150,16 +176,28 @@ def train_model(
         # Forward pass
         if z_dependant_training:
             # FIRST PASS - Decoder training
-            # Only use watermarked images for training in z-dependent mode
-            d_M_hat = decoder(x_M_hat_constrained)
-            
-            # Compute loss using cross-entropy with z-derived classes
-            d_loss = criterion(d_M_hat, z_classes)
-            
-            # Backward pass for decoder - complete this before starting watermarked model pass
-            optimizer_D.zero_grad()
-            d_loss.backward()
-            optimizer_D.step()
+            # Repeat decoder training multiple times per iteration for faster learning
+            for _ in range(5):  # Train decoder 5x more than generator
+                # Only use watermarked images for training in z-dependent mode
+                d_M_hat = decoder(x_M_hat_constrained)
+                
+                # Compute loss using cross-entropy with z-derived classes
+                d_loss = criterion(d_M_hat, z_classes)
+                
+                # Add L2 regularization directly
+                l2_reg = 0.0
+                for param in decoder.parameters():
+                    l2_reg += torch.norm(param)
+                d_loss += 1e-5 * l2_reg
+                
+                # Backward pass for decoder - complete this before starting watermarked model pass
+                optimizer_D.zero_grad()
+                d_loss.backward()
+                
+                # Gradient clipping to prevent exploding gradients
+                torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
+                
+                optimizer_D.step()
             
             # SECOND PASS - Watermarked model training
             # Create a completely fresh computation graph by detaching inputs
