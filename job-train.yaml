@@ -102,7 +102,7 @@ spec:
         - name: nfs-user
           nfs:
             server: 10.24.1.255 # This is $INFK8S_NFS_SERVER_IP
-            path: /user/$USER
+            path: /user/s2470447-infk8s
         - name: dshm
           emptyDir:
             medium: Memory
