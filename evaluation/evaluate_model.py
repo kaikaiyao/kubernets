@@ -182,7 +182,7 @@ def process_batch(
     if current_batch_size <= 0:
         return
     
-    # Generate images: original GAN (x_M), watermarked GAN (x_M_hat), random (x_rand)
+    # Sample z for this batch
     torch.manual_seed(seed_key + batch_idx)
     z = torch.randn((current_batch_size, latent_dim), device=device)
     
@@ -222,15 +222,38 @@ def process_batch(
 
 def generate_images(gan_model, watermarked_model, batch_size, latent_dim, device):
     """Generate original and watermarked images"""
-    if is_stylegan2(gan_model):
-        z = torch.randn((batch_size, latent_dim), device=device)
-        x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
-        x_M_hat = watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
-    else:
-        z = torch.randn(batch_size, latent_dim, 1, 1, device=device)
-        x_M = gan_model(z)
-        x_M_hat = watermarked_model(z)
-    return z, x_M, x_M_hat
+    with torch.no_grad():
+        # Generate latent vector
+        if is_stylegan2(gan_model):
+            z = torch.randn((batch_size, latent_dim), device=device)
+            x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
+            x_M_hat = watermarked_model(z, None, truncation_psi=1.0, noise_mode="const")
+            
+            # Generate random image with same latent dim for comparison
+            z_rand = torch.randn((batch_size, latent_dim), device=device)
+            x_rand = gan_model(z_rand, None, truncation_psi=1.0, noise_mode="const")
+        else:
+            z = torch.randn(batch_size, latent_dim, 1, 1, device=device)
+            x_M = gan_model(z)
+            x_M_hat = watermarked_model(z)
+            
+            # Generate random image with same latent dim for comparison
+            z_rand = torch.randn(batch_size, latent_dim, 1, 1, device=device)
+            x_rand = gan_model(z_rand)
+        
+        # Verify that all images are 256x256 as expected
+        expected_size = (256, 256)
+        
+        if x_M.shape[2:] != expected_size:
+            logging.error(f"ERROR: Original images have unexpected size: {x_M.shape[2]}x{x_M.shape[3]} (expected {expected_size[0]}x{expected_size[1]})")
+            
+        if x_M_hat.shape[2:] != expected_size:
+            logging.error(f"ERROR: Watermarked images have unexpected size: {x_M_hat.shape[2]}x{x_M_hat.shape[3]} (expected {expected_size[0]}x{expected_size[1]})")
+            
+        if x_rand.shape[2:] != expected_size:
+            logging.error(f"ERROR: Random images have unexpected size: {x_rand.shape[2]}x{x_rand.shape[3]} (expected {expected_size[0]}x{expected_size[1]})")
+        
+    return x_M, x_M_hat, x_rand
 
 def calculate_delta_metrics(x_M, x_M_hat, batch_size, lpips_loss):
     """Calculate image difference metrics"""

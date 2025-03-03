@@ -253,25 +253,63 @@ def main():
             latent_dim = args.self_trained_latent_dim
             gan_model = load_gan_model(args.self_trained_model_path, latent_dim).to(device)
         else:
+            # Log the URL being used to load the model
+            logging.info(f"Loading StyleGAN2 model from: {args.stylegan2_url}")
             gan_model = load_stylegan2_model(url=args.stylegan2_url, local_path=local_path, device=device)
             latent_dim = gan_model.z_dim
+            logging.info(f"StyleGAN2 model loaded with latent dimension: {latent_dim}")
 
+        # Load the watermarked model 
         watermarked_model = load_finetuned_model(args.watermarked_model_path)
         watermarked_model.to(device)
         watermarked_model.eval()
-
-        decoder = FlexibleDecoder(
-            args.num_conv_layers,
-            args.num_pool_layers,
-            args.initial_channels,
-        ).to(device)
-        decoder.load_state_dict(torch.load(args.decoder_model_path))
-        decoder = decoder.to(device)
-
+        
+        # Log the watermarked model details
+        sample_z = torch.randn((1, latent_dim), device=device)
+        with torch.no_grad():
+            sample_output = watermarked_model(sample_z, None, truncation_psi=1.0, noise_mode="const")
+            logging.info(f"Watermarked model loaded, output shape: {sample_output.shape}")
+            
+            # Also log the original GAN model output shape for comparison
+            sample_gan_output = gan_model(sample_z, None, truncation_psi=1.0, noise_mode="const")
+            logging.info(f"Original GAN model output shape: {sample_gan_output.shape}")
+            
+            # Print the URL parameters to verify we're using the correct model
+            if not args.self_trained:
+                logging.info(f"StyleGAN2 model URL: {args.stylegan2_url}")
+                logging.info(f"StyleGAN2 local path: {local_path}")
+        
         logging.info(f"Plotting: {args.plotting}")
         
-        if not args.z_dependant_training:
+        if args.z_dependant_training:
+            # Create the decoder with z-dependent mode for evaluation
+            decoder = FlexibleDecoder(
+                total_conv_layers=args.num_conv_layers,
+                total_pool_layers=args.num_pool_layers,
+                initial_channels=args.initial_channels,
+                num_classes=args.num_classes,
+                z_dependant_mode=True
+            ).to(device)
+            decoder.load_state_dict(torch.load(args.decoder_model_path))
+            
+            # Create the z classifier
+            z_classifier = create_z_classifier_model(
+                latent_dim=latent_dim, 
+                num_classes=args.num_classes, 
+                seed_key=args.seed_key, 
+                device=device
+            )
+            logging.info(f"Created z classifier for evaluation with {args.num_classes} classes")
+        else:
+            # Create standard decoder
+            decoder = FlexibleDecoder(
+                args.num_conv_layers,
+                args.num_pool_layers,
+                args.initial_channels,
+            ).to(device)
+            decoder.load_state_dict(torch.load(args.decoder_model_path))
             z_classifier = None
+
         eval_results = evaluate_model(
             num_images=args.num_eval_samples,
             gan_model=gan_model,
