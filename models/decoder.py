@@ -18,13 +18,17 @@ class FlexibleDecoder(nn.Module):
         total_pool_layers=2,
         initial_channels=64,
         convs_per_block=None,
-        channel_growth='double'
+        channel_growth='double',
+        num_classes=1,
+        z_dependant_mode=False
     ):
         super(FlexibleDecoder, self).__init__()
         self.total_conv_layers = total_conv_layers
         self.total_pool_layers = total_pool_layers
         self.initial_channels = initial_channels
         self.channel_growth = channel_growth
+        self.z_dependant_mode = z_dependant_mode
+        self.num_classes = num_classes
 
         # If convs_per_block is not specified, distribute conv layers evenly
         if convs_per_block is None:
@@ -34,11 +38,20 @@ class FlexibleDecoder(nn.Module):
                 convs_per_block = total_conv_layers
 
         self.features = self._make_layers(convs_per_block)
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(self.final_num_channels, 1),
-            nn.Sigmoid(),
-        )
+        
+        # Create classifier based on mode
+        if z_dependant_mode:
+            self.classifier = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(self.final_num_channels, num_classes),
+                nn.Softmax(dim=1),
+            )
+        else:
+            self.classifier = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(self.final_num_channels, 1),
+                nn.Sigmoid(),
+            )
 
     def _make_layers(self, convs_per_block):
         layers = []

@@ -12,6 +12,7 @@ from key.key import generate_mask_secret_key, mask_image_with_key
 import torch.distributed as dist
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+import lpips
 
 def train_surrogate_decoder(
     attack_type: str,
@@ -575,109 +576,235 @@ def perform_pgd_attack(
     return k_attack_scores_mean, k_attack_scores_std
 
 def attack_label_based(
-    attack_type: str,
-    gan_model: nn.Module,
-    watermarked_model: nn.Module,
-    max_delta: float,
-    decoder: nn.Module,
-    surrogate_decoders: list,
-    latent_dim: int,
-    device: torch.device,
-    train_size: int,
-    image_attack_size: int,
-    batch_size: int = 16,
-    epochs: int = 1,
-    attack_batch_size: int = 16,
-    num_steps: int = 500,
-    alpha_values: list = None,
-    train_surrogate: bool = True,
-    finetune_surrogate: bool = False,
-    rank: int = 0,
-    world_size: int = 1,
-    momentum: float = 0.9,
-    attack_image_type: str = "original_image",
-    key_type: str = "csprng",
-) -> tuple:
+    gan_model,
+    watermarked_model,
+    decoder,
+    z_classifier=None,
+    device="cuda:0",
+    time_string=None,
+    latent_dim=512,
+    max_delta=0.01,
+    saving_path="results",
+    seed_key=2024,
+    lr_attack=0.001,
+    attack_steps=1000,
+    lambda_lpips=0.1,
+    lambda_D=1.0,
+    n_early_exit_threshold=10,
+    use_surrogate=False,
+    surrogate_decoder=None,
+    batch_size=8,
+    num_images=100,
+    rank=0,
+    world_size=1,
+    z_dependant_training=False,
+    num_classes=10,
+    train_surrogate=True,
+    finetune_surrogate=False,
+    attack_batch_size=16,
+    momentum=0.9,
+    attack_image_type="original_image",
+    key_type="csprng",
+):
     """
-    Performs a label-based attack on a watermarked GAN model with optional surrogate fine-tuning.
-
+    Perform label-based attack on the watermarked model
+    
     Args:
-        attack_image_type (str, optional): Type of images to use for attack ("original_image", "random_image", or "blurred_image"). Defaults to "original_image".
-        ... (other args remain unchanged)
+        gan_model: Original GAN model
+        watermarked_model: Watermarked GAN model
+        decoder: Decoder model
+        z_classifier: Classifier for z vectors (used in z-dependent training)
+        device: Device to use
+        time_string: Time string for results
+        latent_dim: Dimension of latent space
+        max_delta: Maximum pixel-wise difference allowed
+        saving_path: Path to save results
+        seed_key: Seed for random number generation
+        lr_attack: Learning rate for attack
+        attack_steps: Number of attack steps
+        lambda_lpips: Weight for LPIPS loss
+        lambda_D: Weight for decoder loss
+        n_early_exit_threshold: Threshold for early stopping
+        use_surrogate: Whether to use surrogate model
+        surrogate_decoder: Surrogate decoder model
+        batch_size: Batch size for attack
+        num_images: Number of images to attack
+        rank: Process rank
+        world_size: World size for distributed training
+        z_dependant_training: Whether to use z-dependent training
+        num_classes: Number of classes for z-dependent training
+        train_surrogate: Whether to train surrogate model
+        finetune_surrogate: Whether to fine-tune surrogate model
+        attack_batch_size: Batch size for attack
+        momentum: Momentum for optimizer
+        attack_image_type: Type of attack image
+        key_type: Type of key generation
     """
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    if alpha_values is None:
-        alpha_values = [0.001]
-
-    logging.info("Starting attack_label_based function.")
-    logging.info(f"Using {attack_image_type} for attack images.")
-
+    if rank == 0:
+        logging.info(f"Starting label-based attack with {'z-dependent' if z_dependant_training else 'standard'} mode")
+        logging.info(f"Parameters: max_delta={max_delta}, lr_attack={lr_attack}, attack_steps={attack_steps}")
+        logging.info(f"Lambda_lpips={lambda_lpips}, lambda_D={lambda_D}")
+    
+    # Generate attack images
     gan_model.eval()
     watermarked_model.eval()
-    for param in gan_model.parameters():
-        param.requires_grad = False
-    for param in watermarked_model.parameters():
-        param.requires_grad = False
-
-    # Generate attack images
-    image_attack = generate_attack_images(
-        gan_model, image_attack_size, latent_dim, device, batch_size=100,
-        attack_image_type=attack_image_type
-    )
-    logging.info("Initialized image_attack.")
-
-    # Train surrogate decoders if specified
-    if train_surrogate:
-        for i, surrogate_decoder in enumerate(surrogate_decoders):
-            train_surrogate_decoder(
-                attack_type=attack_type,
-                surrogate_decoder=surrogate_decoder,
-                gan_model=gan_model,
-                watermarked_model=watermarked_model,
-                max_delta=max_delta,
-                latent_dim=latent_dim,
-                device=device,
-                train_size=train_size,
-                epochs=epochs,
-                batch_size=batch_size,
-                rank=rank,
-                world_size=world_size,
-            )
-            if rank == 0:
-                logging.info(f"Training of surrogate decoder {i + 1} completed.")
+    decoder.eval()
+    
+    # Generate latent vectors
+    torch.manual_seed(seed_key)
+    all_z = torch.randn((num_images, latent_dim), device=device)
+    
+    # For z-dependent training, get the classes
+    if z_dependant_training and z_classifier is not None:
+        with torch.no_grad():
+            z_class_logits = z_classifier(all_z)
+            z_classes = torch.argmax(z_class_logits, dim=1)
     else:
-        if rank == 0:
-            logging.info("Using pre-trained surrogate decoders.")
-
-    # Fine-tune surrogate decoders if specified
-    if finetune_surrogate and rank == 0:
-        for i, surrogate_decoder in enumerate(surrogate_decoders):
-            surrogate_decoder = fine_tune_surrogate(
-                surrogate_decoder=surrogate_decoder,
-                decoder=decoder,
-                images=image_attack,
-                device=device,
-                epochs=3,  # Adjustable
-                batch_size=batch_size,
-                rank=rank
-            )
-            logging.info(f"Surrogate decoder {i + 1} fine-tuned with real decoder outputs.")
-
-    # Perform PGD attack
+        z_classes = None
+    
+    # Generate original images
+    with torch.no_grad():
+        if is_stylegan2(gan_model):
+            orig_images = gan_model(all_z, None, truncation_psi=1.0, noise_mode="const")
+        else:
+            orig_images = gan_model(all_z)
+    
+    # Generate watermarked images
+    with torch.no_grad():
+        if is_stylegan2(watermarked_model):
+            watermarked_images = watermarked_model(all_z, None, truncation_psi=1.0, noise_mode="const")
+        else:
+            watermarked_images = watermarked_model(all_z)
+        
+        # Apply constraints
+        watermarked_images = constrain_image(watermarked_images, orig_images, max_delta)
+    
+    # Initialize attack perturbations
+    perturbations = torch.zeros_like(watermarked_images, requires_grad=True, device=device)
+    optimizer = torch.optim.Adam([perturbations], lr=lr_attack)
+    
+    # Track best attack
+    best_attack_images = watermarked_images.clone().detach()
+    best_decoder_scores = torch.ones(num_images, device=device)
+    
+    # LPIPS loss
+    lpips_loss_fn = lpips.LPIPS(net='alex').to(device)
+    
+    early_exit_counter = 0
+    
+    # Attack loop
+    for step in range(attack_steps):
+        optimizer.zero_grad()
+        
+        # Apply perturbation
+        attacked_images = watermarked_images + perturbations
+        
+        # Constrain within max_delta
+        attacked_images = constrain_image(attacked_images, watermarked_images, max_delta)
+        
+        # Forward pass through decoder
+        with torch.no_grad():
+            decoder_output = decoder(attacked_images)
+        
+        # Calculate decoder loss based on training mode
+        if z_dependant_training:
+            # Multi-class output
+            decoder_probs = torch.softmax(decoder_output, dim=1)
+            
+            if z_classes is not None:
+                # Get confidence scores for true classes
+                decoder_scores = torch.gather(decoder_probs, 1, z_classes.unsqueeze(1)).squeeze(1)
+            else:
+                # Get max confidence scores
+                decoder_scores = torch.max(decoder_probs, dim=1)[0]
+            
+            # Reverse for attack: minimize confidence
+            decoder_loss = -torch.mean(torch.log(1 - decoder_scores + 1e-7))
+        else:
+            # Binary output
+            decoder_scores = decoder_output.squeeze(1)
+            decoder_loss = -torch.mean(torch.log(1 - decoder_scores + 1e-7))
+        
+        # LPIPS similarity loss
+        lpips_values = lpips_loss_fn(watermarked_images, attacked_images).squeeze()
+        lpips_value = torch.mean(lpips_values)
+        
+        # Total loss
+        total_loss = lambda_D * decoder_loss + lambda_lpips * lpips_value
+        
+        # Backward
+        total_loss.backward()
+        optimizer.step()
+        
+        # Update best attack
+        with torch.no_grad():
+            # Update best attacks for each image
+            improved_indices = decoder_scores < best_decoder_scores
+            if improved_indices.any():
+                best_attack_images[improved_indices] = attacked_images[improved_indices].detach()
+                best_decoder_scores[improved_indices] = decoder_scores[improved_indices].detach()
+                early_exit_counter = 0
+            else:
+                early_exit_counter += 1
+        
+        # Log progress
+        if rank == 0 and step % 10 == 0:
+            avg_decoder_score = torch.mean(decoder_scores).item()
+            avg_best_score = torch.mean(best_decoder_scores).item()
+            logging.info(f"Step {step}/{attack_steps}: "
+                         f"decoder_loss={decoder_loss.item():.4f}, "
+                         f"lpips_value={lpips_value.item():.4f}, "
+                         f"avg_score={avg_decoder_score:.4f}, "
+                         f"best_avg={avg_best_score:.4f}")
+        
+        # Early stopping
+        if early_exit_counter >= n_early_exit_threshold:
+            if rank == 0:
+                logging.info(f"Early stopping at step {step} due to no improvement")
+            break
+    
+    # Evaluate final attack
+    with torch.no_grad():
+        final_decoder_output = decoder(best_attack_images)
+        
+        if z_dependant_training:
+            # Multi-class output
+            final_decoder_probs = torch.softmax(final_decoder_output, dim=1)
+            
+            if z_classes is not None:
+                # Get confidence scores for true classes
+                final_scores = torch.gather(final_decoder_probs, 1, z_classes.unsqueeze(1)).squeeze(1)
+            else:
+                # Get max confidence scores
+                final_scores = torch.max(final_decoder_probs, dim=1)[0]
+        else:
+            # Binary output
+            final_scores = final_decoder_output.squeeze(1)
+    
+    # Calculate final metrics
+    attack_success_rate = (final_scores < 0.5).float().mean().item()
+    avg_confidence = final_scores.mean().item()
+    avg_lpips = lpips_loss_fn(watermarked_images, best_attack_images).mean().item()
+    
+    # Log results
     if rank == 0:
-        k_attack_scores_mean, k_attack_scores_std = perform_pgd_attack(
-            attack_type=attack_type,
-            surrogate_decoders=surrogate_decoders,
-            decoder=decoder,
-            image_attack=image_attack,
-            max_delta=max_delta,
-            device=device,
-            num_steps=num_steps,
-            alpha_values=alpha_values,
-            attack_batch_size=attack_batch_size,
-            momentum=momentum,
-            key_type=key_type
-        )
-        logging.info("PGD attack for different alpha values completed.")
-        return k_attack_scores_mean, k_attack_scores_std
-    return [], []  # Return empty for non-rank-0 processes
+        mode_str = "z-dependent" if z_dependant_training else "standard"
+        logging.info(f"Attack results ({mode_str}): "
+                     f"Success Rate={attack_success_rate:.4f}, "
+                     f"Avg Confidence={avg_confidence:.4f}, "
+                     f"Avg LPIPS={avg_lpips:.4f}")
+    
+    # Save results
+    if rank == 0 and saving_path:
+        os.makedirs(saving_path, exist_ok=True)
+        result_file = os.path.join(saving_path, f"attack_results_{time_string}.txt")
+        with open(result_file, "w") as f:
+            f.write(f"Attack type: label-based\n")
+            f.write(f"Training mode: {mode_str}\n")
+            f.write(f"Success rate: {attack_success_rate:.4f}\n")
+            f.write(f"Average confidence: {avg_confidence:.4f}\n")
+            f.write(f"Average LPIPS: {avg_lpips:.4f}\n")
+            f.write(f"Max delta: {max_delta}\n")
+            f.write(f"Attack steps: {attack_steps}\n")
+    
+    return attack_success_rate, avg_confidence, avg_lpips

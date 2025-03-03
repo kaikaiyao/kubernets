@@ -4,7 +4,7 @@ metadata:
   name: ${USER}-job-train-ablation-${INDEX}
   labels:
     eidf/user: ${USER}
-    kueue.x-k8s.io/queue-name: eidf107ns-user-queue
+    kueue.x-k8s.io/queue-name: informatics-user-queue # eidf107ns-user-queue for eidf107 
     kueue.x-k8s.io/priority-class: batch-workload-priority
 spec:
   completions: 1

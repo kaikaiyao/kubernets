@@ -20,24 +20,27 @@ def train_model(
     gan_model,
     watermarked_model,
     decoder,
-    n_iterations,
-    latent_dim,
-    batch_size,
-    device,
-    run_eval,
-    num_images,
-    plotting,
-    max_delta,
-    saving_path,
-    mask_switch_on,
-    seed_key,
-    optimizer_M_hat,
-    optimizer_D,
+    z_classifier=None,
+    n_iterations=20000,
+    latent_dim=512,
+    batch_size=4,
+    device="cuda:0",
+    run_eval=True,
+    num_images=100,
+    plotting=True,
+    max_delta=0.01,
+    saving_path="results",
+    mask_switch_on=False,
+    seed_key=2024,
+    optimizer_M_hat=None,
+    optimizer_D=None,
     start_iter=0,
     initial_loss_history=None,
     rank=0,
     world_size=1,
     key_type="csprng",
+    z_dependant_training=False,
+    num_classes=10,
 ):
     if rank == 0:
         logging.info(f"World size: {world_size}")
@@ -45,12 +48,19 @@ def train_model(
         logging.info(f"time_string = {time_string}")
         logging.info("Decoder structure:\n%s", decoder.module if isinstance(decoder, DDP) else decoder)
         logging.info(f"Decoder parameters: {sum(p.numel() for p in decoder.parameters())}")
+        if z_dependant_training:
+            logging.info(f"Using z-dependent training with {num_classes} classes")
 
     gan_model.eval()
     watermarked_model.train()
     decoder.train()
 
     loss_history = initial_loss_history if initial_loss_history is not None else []
+    # Define loss function - either binary cross-entropy or cross-entropy based on mode
+    if z_dependant_training:
+        criterion = torch.nn.CrossEntropyLoss()
+    else:
+        criterion = torch.nn.BCELoss()
 
     for i in range(start_iter, n_iterations):
         torch.cuda.empty_cache()
@@ -60,6 +70,18 @@ def train_model(
         torch.manual_seed(seed_key + i * world_size + rank)
         z = torch.randn((batch_size, latent_dim), device=device)
 
+        # Get z classes if using z-dependent training
+        if z_dependant_training:
+            with torch.no_grad():
+                z_class_logits = z_classifier(z)
+                z_classes = torch.argmax(z_class_logits, dim=1)
+                
+                # Debugging: Print class distribution for each batch
+                if rank == 0:
+                    class_counts = torch.bincount(z_classes, minlength=num_classes)
+                    class_str = ', '.join([f"{cls}:{count.item()}" for cls, count in enumerate(class_counts) if count > 0])
+                    logging.info(f"Iteration {i} z classes: {class_str} (z shape: {z.shape})")
+        
         with torch.no_grad():
             if is_stylegan2(gan_model):
                 x_M = gan_model(z, None, truncation_psi=1.0, noise_mode="const")
@@ -119,100 +141,145 @@ def train_model(
 
         x_M = x_M.detach()
 
-        k_M = decoder(x_M)
-        k_M_hat = decoder(x_M_hat_constrained)
+        # Zero gradients
+        optimizer_M_hat.zero_grad()
+        optimizer_D.zero_grad()
 
-        del x_M, x_M_hat, x_M_hat_constrained
-        torch.cuda.empty_cache()
+        # Forward pass
+        if z_dependant_training:
+            # Only use watermarked images for training in z-dependent mode
+            d_M_hat = decoder(x_M_hat_constrained)
+            
+            # Compute loss using cross-entropy with z-derived classes
+            d_loss = criterion(d_M_hat, z_classes)
+            
+            # Train watermarked model to make its generated images
+            # correctly classified by the decoder
+            m_hat_loss = -d_loss
+        else:
+            # Original binary classification approach
+            d_M = decoder(x_M)
+            d_M_hat = decoder(x_M_hat_constrained)
+            
+            # Target: original images -> 0, watermarked images -> 1
+            zeros = torch.zeros((batch_size, 1), device=device)
+            ones = torch.ones((batch_size, 1), device=device)
+            
+            # Compute loss
+            d_loss = criterion(d_M, zeros) + criterion(d_M_hat, ones)
+            
+            # Watermarked model loss - make decoder output 1 for watermarked images
+            m_hat_loss = criterion(d_M_hat, ones)
 
-        d_k_M_hat = torch.norm(k_M_hat, dim=1) 
-        d_k_M = torch.norm(k_M, dim=1) 
-
-        del k_M, k_M_hat
-        torch.cuda.empty_cache()
-
-        # Sigmoid func in the final layer of the decoder is used to make the output range from 0 to 1, so d ranges from 0 to 1,
-        # so the loss is to maximize the difference between the distance of the prediction on the original image and the watermarked image
-        # Note:
-        # 1. the loss is squared to make it more sensitive to the difference
-        # 2. the max is applied to get the maximum difference in all samples in one iteration (batch)
-        loss = ((d_k_M - d_k_M_hat).max() + 1) ** 2 
-
-        optimizer_M_hat.zero_grad(set_to_none=True)
-        optimizer_D.zero_grad(set_to_none=True)
-
-        loss.backward()
-
-        optimizer_M_hat.step()
+        # Backward pass for decoder
+        d_loss.backward(retain_graph=True)
         optimizer_D.step()
 
-        loss_history.append(loss.item())
+        # Backward pass for watermarked model
+        optimizer_M_hat.zero_grad()
+        m_hat_loss.backward()
+        optimizer_M_hat.step()
 
+        # Record loss
         if rank == 0:
-            logging.info(
-                f"Train Iteration {i + 1}: "
-                f"loss: {loss.item():.4f}, "
-                f"d_k_M_hat range: [{d_k_M_hat.min().item():.4f}, {d_k_M_hat.max().item():.4f}], "
-                f"d_k_M range: [{d_k_M.min().item():.4f}, {d_k_M.max().item():.4f}]"
-            )
-
-        del loss, d_k_M_hat, d_k_M
-        torch.cuda.empty_cache()
-
-    # Save final models
-    if rank == 0:
-        checkpoint = {
-            'watermarked_model': watermarked_model.module.state_dict(),
-            'decoder': decoder.module.state_dict(),
-            'optimizer_M_hat': optimizer_M_hat.state_dict(),
-            'optimizer_D': optimizer_D.state_dict(),
-            'iteration': n_iterations - 1,
-            'loss_history': loss_history,
-        }
-        checkpoint_path = os.path.join(saving_path, f'checkpoint_final_{time_string}.pt')
-        torch.save(checkpoint, checkpoint_path)
-
-        save_finetuned_model(watermarked_model.module, saving_path, f'watermarked_model_final_{time_string}.pkl')
-        torch.save(decoder.module.state_dict(), os.path.join(saving_path, f'decoder_model_final_{time_string}.pth'))
-        logging.info(f"Final models saved at iteration {n_iterations}, time_string = {time_string}")
-
-    # Final evaluation and logging
-    if rank == 0:
-        logging.info("Training completed.")
-        
-        if run_eval:
-            watermarked_model.eval()
-            decoder.eval()
+            loss_history.append((d_loss.item(), m_hat_loss.item()))
             
-            with torch.no_grad():
-                eval_results = evaluate_model(
-                    num_images,
-                    gan_model,
-                    watermarked_model.module,
-                    decoder.module,
-                    device,
-                    plotting,
-                    latent_dim,
-                    max_delta,
-                    mask_switch_on,
-                    seed_key,
-                    flip_key_type="none",
-                    key_type=key_type,
-                )
-            auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
+            if i % 50 == 0:
+                average_d_loss = sum(l[0] for l in loss_history[-50:]) / min(50, len(loss_history[-50:]))
+                average_m_hat_loss = sum(l[1] for l in loss_history[-50:]) / min(50, len(loss_history[-50:]))
+                
+                logging.info(f"Iteration {i}/{n_iterations}, " +
+                            f"D Loss: {average_d_loss:.4f}, " +
+                            f"M_hat Loss: {average_m_hat_loss:.4f}")
         
-            auc_str = f"{auc:.4f}" if auc is not None else "None"
-            tpr_str = f"{tpr_at_1_fpr:.4f}" if tpr_at_1_fpr is not None else "None"
+        # Save checkpoint and evaluate
+        if rank == 0 and i > 0 and i % 10000 == 0:
+            model_dir = os.path.join(saving_path, f"checkpoint_{i}")
+            os.makedirs(model_dir, exist_ok=True)
+            
+            save_finetuned_model(watermarked_model.module if isinstance(watermarked_model, DDP) else watermarked_model,
+                                model_dir, "watermarked_model.pth")
+            save_finetuned_model(decoder.module if isinstance(decoder, DDP) else decoder,
+                                model_dir, "decoder.pth")
+            
+            # Save loss history
+            loss_hist_path = os.path.join(model_dir, "loss_history.npy")
+            np.save(loss_hist_path, np.array(loss_history))
+            
+            if run_eval:
+                with torch.no_grad():
+                    if z_dependant_training:
+                        evaluate_model(gan_model.module if isinstance(gan_model, DDP) else gan_model,
+                                      watermarked_model.module if isinstance(watermarked_model, DDP) else watermarked_model,
+                                      decoder.module if isinstance(decoder, DDP) else decoder,
+                                      z_classifier=z_classifier,
+                                      num_images=num_images,
+                                      device=device,
+                                      time_string=time_string,
+                                      latent_dim=latent_dim,
+                                      saving_path=saving_path,
+                                      seed_key=seed_key,
+                                      evaluate_from_checkpoint=True,
+                                      checkpoint_iter=i,
+                                      z_dependant_training=True,
+                                      num_classes=num_classes)
+                    else:
+                        evaluate_model(gan_model.module if isinstance(gan_model, DDP) else gan_model,
+                                      watermarked_model.module if isinstance(watermarked_model, DDP) else watermarked_model,
+                                      decoder.module if isinstance(decoder, DDP) else decoder,
+                                      num_images=num_images,
+                                      device=device,
+                                      time_string=time_string,
+                                      latent_dim=latent_dim,
+                                      saving_path=saving_path,
+                                      seed_key=seed_key,
+                                      evaluate_from_checkpoint=True,
+                                      checkpoint_iter=i)
 
-            logging.info(
-                f"Final evaluation after {n_iterations} iterations: "
-                f"AUC score: {auc_str}, "
-                f"tpr_at_1_fpr: {tpr_str}, "
-                f"lpips_loss: {lpips_loss:.4f}, "
-                f"fid_score: {fid_score:.4f}, "
-                f"mean_max_delta: {mean_max_delta:.4f}, "
-                f"total_decoder_params: {total_decoder_params}"
-            )
+    # Save final model
+    if rank == 0:
+        model_dir = os.path.join(saving_path, "final")
+        os.makedirs(model_dir, exist_ok=True)
+        
+        save_finetuned_model(watermarked_model.module if isinstance(watermarked_model, DDP) else watermarked_model,
+                            model_dir, "watermarked_model.pth")
+        save_finetuned_model(decoder.module if isinstance(decoder, DDP) else decoder,
+                            model_dir, "decoder.pth")
+        
+        # Save loss history
+        loss_hist_path = os.path.join(model_dir, "loss_history.npy")
+        np.save(loss_hist_path, np.array(loss_history))
+        
+        # Final evaluation
+        if run_eval:
+            with torch.no_grad():
+                if z_dependant_training:
+                    evaluate_model(gan_model.module if isinstance(gan_model, DDP) else gan_model,
+                                   watermarked_model.module if isinstance(watermarked_model, DDP) else watermarked_model,
+                                   decoder.module if isinstance(decoder, DDP) else decoder,
+                                   z_classifier=z_classifier,
+                                   num_images=num_images,
+                                   device=device,
+                                   time_string=time_string,
+                                   latent_dim=latent_dim,
+                                   saving_path=saving_path,
+                                   seed_key=seed_key,
+                                   evaluate_from_checkpoint=True,
+                                   checkpoint_iter="final",
+                                   z_dependant_training=True,
+                                   num_classes=num_classes)
+                else:
+                    evaluate_model(gan_model.module if isinstance(gan_model, DDP) else gan_model,
+                                   watermarked_model.module if isinstance(watermarked_model, DDP) else watermarked_model,
+                                   decoder.module if isinstance(decoder, DDP) else decoder,
+                                   num_images=num_images,
+                                   device=device,
+                                   time_string=time_string,
+                                   latent_dim=latent_dim,
+                                   saving_path=saving_path,
+                                   seed_key=seed_key,
+                                   evaluate_from_checkpoint=True,
+                                   checkpoint_iter="final")
 
     # Cleanup
     if rank == 0:

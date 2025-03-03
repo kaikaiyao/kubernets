@@ -4,12 +4,13 @@ import torch
 import torch.distributed as dist
 import pprint
 import logging  # Added to use logging.info
+import sys
 
 from models.stylegan2 import load_stylegan2_model
 from models.gan import load_gan_model
 from models.decoder import FlexibleDecoder
 from models.attack_combined_model import CombinedModel
-from models.model_utils import clone_model, load_finetuned_model
+from models.model_utils import clone_model, load_finetuned_model, create_z_classifier_model
 from utils.gpu import get_gpu_info, initialize_cuda
 from utils.file_utils import generate_time_based_string
 from utils.logging import setup_logging
@@ -73,6 +74,11 @@ def main():
 
     # DDP arguments
     parser.add_argument("--local_rank", type=int, default=0, help="Local rank for distributed training")
+
+    # Z-dependent training arguments
+    parser.add_argument("--z_dependant_training", action="store_true", help="Enable z-dependent training pipeline")
+    parser.set_defaults(z_dependant_training=False)
+    parser.add_argument("--num_classes", type=int, default=10, help="Number of classes for z-dependent training")
 
     args = parser.parse_args()
 
@@ -160,11 +166,40 @@ def main():
             if args.rank == 0:
                 logging.info(f"Resuming training from iteration {start_iter}")
 
+        # Create the decoder
+        if args.z_dependant_training:
+            decoder = FlexibleDecoder(
+                total_conv_layers=args.num_conv_layers,
+                total_pool_layers=args.num_pool_layers,
+                initial_channels=args.initial_channels,
+                num_classes=args.num_classes,
+                z_dependant_mode=True
+            ).to(device)
+            logging.info(f"Created decoder with z-dependent training mode, {args.num_classes} classes")
+            
+            # Create the fixed z classifier for latent vector classification
+            z_classifier = create_z_classifier_model(
+                latent_dim=latent_dim, 
+                num_classes=args.num_classes, 
+                seed_key=args.seed_key, 
+                device=device
+            )
+            logging.info(f"Created fixed z classifier for {args.num_classes} classes")
+        else:
+            decoder = FlexibleDecoder(
+                total_conv_layers=args.num_conv_layers,
+                total_pool_layers=args.num_pool_layers,
+                initial_channels=args.initial_channels
+            ).to(device)
+            logging.info("Created decoder with standard mode")
+            z_classifier = None
+
         train_model(
             time_string,
             gan_model,
             watermarked_model,
             decoder,
+            z_classifier,
             args.n_iterations,
             latent_dim,
             args.batch_size,
@@ -183,6 +218,8 @@ def main():
             args.rank,
             args.world_size,
             args.key_type,
+            args.z_dependant_training,
+            args.num_classes
         )
 
     elif args.mode == "eval":
@@ -216,6 +253,7 @@ def main():
             gan_model,
             watermarked_model,
             decoder,
+            z_classifier,
             device,
             args.plotting,
             latent_dim,
@@ -224,6 +262,8 @@ def main():
             args.seed_key,
             args.flip_key_type,
             key_type=args.key_type,
+            z_dependant_training=args.z_dependant_training,
+            num_classes=args.num_classes
         )
 
         auc, tpr_at_1_fpr, lpips_loss, fid_score, mean_max_delta, total_decoder_params = eval_results
@@ -346,8 +386,8 @@ def main():
             args.attack_type,
             gan_model,
             watermarked_model,
-            args.max_delta,
             decoder,
+            z_classifier,
             surrogate_decoders,  # Now passing list of decoders
             latent_dim,
             device,
@@ -365,6 +405,8 @@ def main():
             momentum=args.momentum_pgd,
             attack_image_type=args.attack_image_type,
             key_type=args.key_type,
+            z_dependant_training=args.z_dependant_training,
+            num_classes=args.num_classes
         )
 
 
