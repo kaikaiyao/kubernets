@@ -79,6 +79,7 @@ spec:
                       --max_delta=$MAX_DELTA \
                       --mask_switch_off \
                       --z_dependant_training \
+                      --use_privileged_info \
                       --num_classes=3 \
                       --saving_path=results
               exit_status=$?

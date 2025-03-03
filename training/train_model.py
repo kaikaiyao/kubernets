@@ -186,7 +186,11 @@ def train_model(
                 x_M_hat_for_decoder = x_M_hat_copy.clone()
                 
                 # Only use watermarked images for training in z-dependent mode
-                d_M_hat = decoder(x_M_hat_for_decoder)
+                # Pass z as privileged information if the decoder supports it
+                if hasattr(decoder.module, 'use_privileged_info') and decoder.module.use_privileged_info:
+                    d_M_hat = decoder(x_M_hat_for_decoder, z)
+                else:
+                    d_M_hat = decoder(x_M_hat_for_decoder)
                 
                 # Compute loss using cross-entropy with z-derived classes
                 d_loss = criterion(d_M_hat, z_classes)
@@ -216,7 +220,11 @@ def train_model(
                 x_M_hat_constrained_detached = x_M_hat_constrained.detach()
             
             # Forward pass with detached inputs (after decoder optimization is complete)
-            d_M_hat_for_watermark = decoder(x_M_hat_constrained_detached)
+            # Pass z as privileged information if the decoder supports it
+            if hasattr(decoder.module, 'use_privileged_info') and decoder.module.use_privileged_info:
+                d_M_hat_for_watermark = decoder(x_M_hat_constrained_detached, z)
+            else:
+                d_M_hat_for_watermark = decoder(x_M_hat_constrained_detached)
             
             # For better learning, use a more direct loss for the watermarked model
             # Instead of negating the CE loss, we want to maximize the probability of the correct class

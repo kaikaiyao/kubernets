@@ -1,6 +1,7 @@
 import torch.nn as nn
 import math
 import torch.nn.functional as F
+import torch
 
 class MCDropout(nn.Module):
     def __init__(self, p=0.5):
@@ -20,7 +21,9 @@ class FlexibleDecoder(nn.Module):
         convs_per_block=None,
         channel_growth='double',
         num_classes=1,
-        z_dependant_mode=False
+        z_dependant_mode=False,
+        latent_dim=512,  # Add latent_dim for LUPI
+        use_privileged_info=False  # LUPI flag
     ):
         super(FlexibleDecoder, self).__init__()
         self.total_conv_layers = total_conv_layers
@@ -29,6 +32,8 @@ class FlexibleDecoder(nn.Module):
         self.channel_growth = channel_growth
         self.z_dependant_mode = z_dependant_mode
         self.num_classes = num_classes
+        self.use_privileged_info = use_privileged_info
+        self.latent_dim = latent_dim
 
         # If convs_per_block is not specified, distribute conv layers evenly
         if convs_per_block is None:
@@ -87,6 +92,27 @@ class FlexibleDecoder(nn.Module):
                 nn.Linear(256, num_classes),
                 # No softmax - raw logits for CrossEntropyLoss
             )
+            
+            # For LUPI: Add a separate branch that processes the privileged z information
+            if self.use_privileged_info:
+                self.privileged_branch = nn.Sequential(
+                    nn.Linear(latent_dim, 512),
+                    nn.BatchNorm1d(512),
+                    nn.LeakyReLU(0.2),
+                    nn.Dropout(0.3),
+                    nn.Linear(512, 256),
+                    nn.BatchNorm1d(256),
+                    nn.LeakyReLU(0.2),
+                )
+                
+                # Fusion layer that combines image features with z information
+                self.fusion = nn.Sequential(
+                    nn.Linear(256 + 256, 256),  # Combine privileged and image features
+                    nn.BatchNorm1d(256),
+                    nn.LeakyReLU(0.2),
+                    nn.Dropout(0.5),
+                    nn.Linear(256, num_classes)
+                )
         else:
             self.classifier = nn.Sequential(
                 nn.Flatten(),
@@ -144,7 +170,28 @@ class FlexibleDecoder(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, z=None):
         x = self.features(x)
-        x = self.classifier(x)
-        return x
+        
+        if self.z_dependant_mode and self.use_privileged_info and self.training and z is not None:
+            # During training with privileged information
+            image_features = x
+            image_features = self.classifier[:-1](image_features)  # Use all but the last layer
+            
+            # Process z through privileged branch
+            z_features = self.privileged_branch(z)
+            
+            # Concatenate features
+            combined_features = torch.cat([image_features, z_features], dim=1)
+            
+            # Final fusion layer
+            x = self.fusion(combined_features)
+            return x
+        elif self.z_dependant_mode and self.use_privileged_info and not self.training:
+            # During inference without privileged information
+            image_features = self.classifier(x)
+            return image_features
+        else:
+            # Standard path (non-LUPI or when z not provided)
+            x = self.classifier(x)
+            return x

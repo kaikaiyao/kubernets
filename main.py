@@ -79,6 +79,8 @@ def main():
     parser.add_argument("--z_dependant_training", action="store_true", help="Enable z-dependent training pipeline")
     parser.set_defaults(z_dependant_training=False)
     parser.add_argument("--num_classes", type=int, default=10, help="Number of classes for z-dependent training")
+    parser.add_argument("--use_privileged_info", action="store_true", help="Enable LUPI (Learning Using Privileged Information) during training")
+    parser.set_defaults(use_privileged_info=False)
 
     args = parser.parse_args()
 
@@ -179,7 +181,9 @@ def main():
                 total_pool_layers=args.num_pool_layers,
                 initial_channels=args.initial_channels,
                 num_classes=args.num_classes,
-                z_dependant_mode=True
+                z_dependant_mode=True,
+                latent_dim=latent_dim,
+                use_privileged_info=args.use_privileged_info
             ).to(device)
             
             # Wrap the decoder in DDP
@@ -189,7 +193,6 @@ def main():
                 output_device=args.local_rank
             )
             
-            # Create a new optimizer for the decoder
             # Switch to Adam with weight decay for better optimization
             optimizer_D = torch.optim.Adam(
                 decoder.parameters(), 
@@ -201,6 +204,8 @@ def main():
             if args.rank == 0:
                 logging.info(f"Created decoder with z-dependent training mode, {args.num_classes} classes")
                 logging.info(f"Using Adam optimizer with lr={args.lr_D * 50.0}, weight_decay=1e-4")
+                if args.use_privileged_info:
+                    logging.info("LUPI (Learning Using Privileged Information) enabled - using z during training")
             
             # Create the fixed z classifier for latent vector classification
             z_classifier = create_z_classifier_model(
