@@ -180,16 +180,16 @@ def train_model(
             with torch.no_grad():
                 x_M_hat_copy = x_M_hat_constrained.detach().clone()
             
-            # Initialize accumulated decoder gradients
+            # Initialize optimizer for decoder
             optimizer_D.zero_grad()
             
-            # Train decoder multiple times with fresh graphs each time
-            # Use a single backward pass with accumulated loss to avoid DDP parameter reuse issues
-            accumulated_d_loss = 0
+            # Store individual losses to avoid in-place operations
+            d_losses = []
             
+            # Train decoder multiple times with fresh copies each time
             for train_iter in range(5):  # Train decoder 5x more than generator
                 # Create a fresh computation graph for each iteration
-                x_M_hat_for_decoder = x_M_hat_copy.clone()
+                x_M_hat_for_decoder = x_M_hat_copy.detach().clone()
                 
                 # Only use watermarked images for training in z-dependent mode
                 # Pass z as privileged information if the decoder supports it
@@ -205,18 +205,21 @@ def train_model(
                 l2_reg = 0.0
                 for param in decoder.parameters():
                     l2_reg += torch.norm(param)
-                d_loss += 1e-5 * l2_reg
+                d_loss = d_loss + 1e-5 * l2_reg  # Avoid in-place addition
                 
-                # Accumulate loss instead of backward passes
-                accumulated_d_loss += d_loss
+                # Store each loss separately instead of accumulating in-place
+                d_losses.append(d_loss)
                 
                 # Save loss value for logging
                 if train_iter == 4:
                     d_loss_value = d_loss.item()
             
-            # Single backward pass with accumulated loss
-            accumulated_d_loss = accumulated_d_loss / 5  # Average the loss
-            accumulated_d_loss.backward()
+            # Combine all losses without modifying the original tensors
+            # This creates a fresh computation graph connecting all losses
+            combined_d_loss = sum(d_losses) / len(d_losses)
+            
+            # Single backward pass with combined loss
+            combined_d_loss.backward()
             
             # Gradient clipping to prevent exploding gradients
             torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)

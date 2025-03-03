@@ -473,7 +473,6 @@ def main():
             args.train_size,
             args.image_attack_size,
             batch_size=args.batch_size_surr,
-            epochs=1,
             attack_batch_size=args.attack_batch_size_pgd,
             num_steps=args.num_steps_pgd,
             alpha_values=args.alpha_values_pgd,
