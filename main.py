@@ -166,8 +166,9 @@ def main():
             if args.rank == 0:
                 logging.info(f"Resuming training from iteration {start_iter}")
 
-        # Create the decoder
+        # Create the decoder with correct mode
         if args.z_dependant_training:
+            # Create a new decoder with z-dependent mode
             decoder = FlexibleDecoder(
                 total_conv_layers=args.num_conv_layers,
                 total_pool_layers=args.num_pool_layers,
@@ -175,7 +176,19 @@ def main():
                 num_classes=args.num_classes,
                 z_dependant_mode=True
             ).to(device)
-            logging.info(f"Created decoder with z-dependent training mode, {args.num_classes} classes")
+            
+            # Wrap the decoder in DDP
+            decoder = torch.nn.parallel.DistributedDataParallel(
+                decoder,
+                device_ids=[args.local_rank],
+                output_device=args.local_rank
+            )
+            
+            # Create a new optimizer for the decoder
+            optimizer_D = torch.optim.Adagrad(decoder.parameters(), lr=args.lr_D)
+            
+            if args.rank == 0:
+                logging.info(f"Created decoder with z-dependent training mode, {args.num_classes} classes")
             
             # Create the fixed z classifier for latent vector classification
             z_classifier = create_z_classifier_model(
@@ -184,15 +197,12 @@ def main():
                 seed_key=args.seed_key, 
                 device=device
             )
-            logging.info(f"Created fixed z classifier for {args.num_classes} classes")
+            if args.rank == 0:
+                logging.info(f"Created fixed z classifier for {args.num_classes} classes")
         else:
-            decoder = FlexibleDecoder(
-                total_conv_layers=args.num_conv_layers,
-                total_pool_layers=args.num_pool_layers,
-                initial_channels=args.initial_channels
-            ).to(device)
-            logging.info("Created decoder with standard mode")
             z_classifier = None
+            if args.rank == 0:
+                logging.info("Using standard binary classification mode")
 
         train_model(
             time_string,
