@@ -62,18 +62,32 @@ def create_z_classifier_model(latent_dim, num_classes, seed_key, device, key_typ
     # Convert seed_key to bytes
     key_bytes = hashlib.sha256(str(seed_key).encode()).digest()
     
-    # Create a simple MLP for z classification
-    model = nn.Sequential(
-        nn.Linear(latent_dim, 128),
-        nn.ReLU(),
-        nn.Linear(128, 256),
-        nn.ReLU(),
-        nn.Linear(256, 128),
-        nn.ReLU(),
-        nn.Linear(128, num_classes)
-    )
+    # Use a more complex model with normalization layers to better separate classes
+    class ZClassifier(nn.Module):
+        def __init__(self, latent_dim, num_classes):
+            super().__init__()
+            hidden_dim = 256
+            self.model = nn.Sequential(
+                nn.Linear(latent_dim, hidden_dim),
+                nn.LayerNorm(hidden_dim),  # Normalize activations to prevent mode collapse
+                nn.LeakyReLU(0.2),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.LeakyReLU(0.2),
+                nn.Linear(hidden_dim, num_classes)
+            )
+            
+            # Add a learnable temperature parameter (fixed after initialization)
+            self.temperature = nn.Parameter(torch.ones(1) * 2.0)
+            
+        def forward(self, x):
+            logits = self.model(x)
+            # Apply temperature scaling to create more uniform class distributions
+            return logits / self.temperature
     
-    # Initialize using CSPRNG
+    model = ZClassifier(latent_dim, num_classes)
+    
+    # Initialize using CSPRNG with specific modifications to ensure class diversity
     total_params = sum(p.numel() for p in model.parameters())
     if key_type == "csprng":
         # Generate pseudorandom bytes using HMAC
@@ -92,29 +106,49 @@ def create_z_classifier_model(latent_dim, num_classes, seed_key, device, key_typ
         rng_bytes = generate_csprng_bytes(key_bytes, total_params * 4)  # 4 bytes per float32
         rng_floats = np.frombuffer(rng_bytes, dtype=np.float32)
         
-        # Apply fan-in scaling to weights
+        # Apply initialization with careful scaling to ensure class diversity
         param_idx = 0
-        for layer in model:
-            if isinstance(layer, nn.Linear):
-                # Calculate fan_in for Xavier-like scaling
-                fan_in = layer.in_features
-                weight_scale = np.sqrt(1.0 / fan_in)
+        for name, param in model.named_parameters():
+            # Skip the temperature parameter
+            if "temperature" in name:
+                continue
                 
-                # Apply to weights
-                num_weights = layer.weight.numel()
-                layer_weights = torch.from_numpy(
-                    rng_floats[param_idx:param_idx+num_weights].reshape(layer.weight.shape)
-                ) * weight_scale
-                layer.weight.data.copy_(layer_weights)
-                param_idx += num_weights
-                
-                # Apply to bias
-                num_biases = layer.bias.numel()
-                layer_biases = torch.from_numpy(
-                    rng_floats[param_idx:param_idx+num_biases].reshape(layer.bias.shape)
-                ) * 0.1  # smaller scale for biases
-                layer.bias.data.copy_(layer_biases)
-                param_idx += num_biases
+            numel = param.numel()
+            
+            if 'weight' in name:
+                # For final layer, make sure weights have significant variation
+                if param.shape[0] == num_classes:
+                    # Scale final layer weights to have larger magnitude to increase class diversity
+                    param_data = torch.from_numpy(
+                        rng_floats[param_idx:param_idx+numel].reshape(param.shape)
+                    ) * 1.0
+                    
+                    # Ensure each output neuron has distinct patterns
+                    for i in range(num_classes):
+                        # Add class-specific bias to weights
+                        class_offset = (i - num_classes // 2) * 0.2
+                        param_data[i] += class_offset
+                else:
+                    # For other layers, use standard Xavier scaling
+                    fan_in = param.shape[1]
+                    param_data = torch.from_numpy(
+                        rng_floats[param_idx:param_idx+numel].reshape(param.shape)
+                    ) * np.sqrt(2.0 / fan_in)
+            else:  # bias
+                if param.shape[0] == num_classes:
+                    # Create explicit bias for each class to improve separation
+                    param_data = torch.zeros_like(param)
+                    for i in range(num_classes):
+                        # Distribute biases evenly around zero
+                        param_data[i] = (i - (num_classes - 1) / 2) * 0.5
+                else:
+                    # Regular initialization for other biases
+                    param_data = torch.from_numpy(
+                        rng_floats[param_idx:param_idx+numel].reshape(param.shape)
+                    ) * 0.1
+                    
+            param.data.copy_(param_data)
+            param_idx += numel
     
     # Set all parameters to non-trainable
     for param in model.parameters():
