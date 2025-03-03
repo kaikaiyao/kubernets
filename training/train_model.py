@@ -58,7 +58,9 @@ def train_model(
     loss_history = initial_loss_history if initial_loss_history is not None else []
     # Define loss function - either binary cross-entropy or cross-entropy based on mode
     if z_dependant_training:
-        criterion = torch.nn.CrossEntropyLoss()
+        # Use label smoothing for better learning signal
+        criterion = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
+        logging.info("Using CrossEntropyLoss with label smoothing for z-dependent training")
     else:
         criterion = torch.nn.BCELoss()
 
@@ -166,7 +168,21 @@ def train_model(
             
             # Forward pass with detached inputs (after decoder optimization is complete)
             d_M_hat_for_watermark = decoder(x_M_hat_constrained_detached)
-            m_hat_loss = -criterion(d_M_hat_for_watermark, z_classes)
+            
+            # For better learning, use a more direct loss for the watermarked model
+            # Instead of negating the CE loss, we want to maximize the probability of the correct class
+            log_probs = torch.nn.functional.log_softmax(d_M_hat_for_watermark, dim=1)
+            m_hat_loss = -torch.gather(log_probs, 1, z_classes.unsqueeze(1)).mean()
+            
+            # Add auxiliary loss to encourage diversity in outputs
+            uniform_target = torch.ones_like(d_M_hat_for_watermark) / num_classes
+            auxiliary_loss = torch.nn.functional.kl_div(
+                log_probs, 
+                uniform_target, 
+                reduction='batchmean'
+            ) * 0.01  # small weight
+            
+            m_hat_loss = m_hat_loss + auxiliary_loss
             
             # Backward pass for watermarked model
             optimizer_M_hat.zero_grad()

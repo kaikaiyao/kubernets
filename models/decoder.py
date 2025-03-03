@@ -43,8 +43,12 @@ class FlexibleDecoder(nn.Module):
         if z_dependant_mode:
             self.classifier = nn.Sequential(
                 nn.Flatten(),
-                nn.Linear(self.final_num_channels, num_classes),
-                nn.Softmax(dim=1),
+                nn.Dropout(0.3),  # Add dropout for better regularization
+                nn.Linear(self.final_num_channels, 256),  # Add intermediate layer
+                nn.ReLU(),
+                nn.Dropout(0.3),  # More dropout
+                nn.Linear(256, num_classes),
+                # Remove softmax - it's better to use raw logits with CrossEntropyLoss
             )
         else:
             self.classifier = nn.Sequential(

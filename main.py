@@ -185,10 +185,12 @@ def main():
             )
             
             # Create a new optimizer for the decoder
-            optimizer_D = torch.optim.Adagrad(decoder.parameters(), lr=args.lr_D)
+            # Use a higher learning rate for z-dependent training to accelerate learning
+            optimizer_D = torch.optim.Adagrad(decoder.parameters(), lr=args.lr_D * 10.0)
             
             if args.rank == 0:
                 logging.info(f"Created decoder with z-dependent training mode, {args.num_classes} classes")
+                logging.info(f"Using increased learning rate for decoder: {args.lr_D * 10.0}")
             
             # Create the fixed z classifier for latent vector classification
             z_classifier = create_z_classifier_model(
