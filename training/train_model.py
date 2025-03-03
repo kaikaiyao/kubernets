@@ -147,23 +147,31 @@ def train_model(
 
         # Forward pass
         if z_dependant_training:
+            # FIRST PASS - Decoder training
             # Only use watermarked images for training in z-dependent mode
             d_M_hat = decoder(x_M_hat_constrained)
             
             # Compute loss using cross-entropy with z-derived classes
             d_loss = criterion(d_M_hat, z_classes)
             
-            # Train watermarked model to make its generated images
-            # correctly classified by the decoder
-            # We need to create a fresh computation graph for the second backward pass
-            # to avoid in-place operation errors
+            # Backward pass for decoder - complete this before starting watermarked model pass
+            optimizer_D.zero_grad()
+            d_loss.backward()
+            optimizer_D.step()
+            
+            # SECOND PASS - Watermarked model training
+            # Create a completely fresh computation graph by detaching inputs
             with torch.no_grad():
-                # Detach to avoid in-place modification error
-                d_M_hat_clone = d_M_hat.detach().clone()
-                
-            # Run decoder again to create a fresh computational graph for the watermarked model
-            d_M_hat_for_watermark = decoder(x_M_hat_constrained)
+                x_M_hat_constrained_detached = x_M_hat_constrained.detach()
+            
+            # Forward pass with detached inputs (after decoder optimization is complete)
+            d_M_hat_for_watermark = decoder(x_M_hat_constrained_detached)
             m_hat_loss = -criterion(d_M_hat_for_watermark, z_classes)
+            
+            # Backward pass for watermarked model
+            optimizer_M_hat.zero_grad()
+            m_hat_loss.backward()
+            optimizer_M_hat.step()
         else:
             # Original binary classification approach
             d_M = decoder(x_M)
@@ -176,17 +184,18 @@ def train_model(
             # Compute loss
             d_loss = criterion(d_M, zeros) + criterion(d_M_hat, ones)
             
+            # Backward pass for decoder
+            optimizer_D.zero_grad()
+            d_loss.backward(retain_graph=True)
+            optimizer_D.step()
+            
             # Watermarked model loss - make decoder output 1 for watermarked images
             m_hat_loss = criterion(d_M_hat, ones)
-
-        # Backward pass for decoder
-        d_loss.backward(retain_graph=True)
-        optimizer_D.step()
-
-        # Backward pass for watermarked model
-        optimizer_M_hat.zero_grad()
-        m_hat_loss.backward()
-        optimizer_M_hat.step()
+            
+            # Backward pass for watermarked model
+            optimizer_M_hat.zero_grad()
+            m_hat_loss.backward()
+            optimizer_M_hat.step()
 
         # Record loss
         if rank == 0:
