@@ -4,7 +4,7 @@ metadata:
   name: ${USER}-job-train-ablation-${INDEX}
   labels:
     eidf/user: ${USER}
-    kueue.x-k8s.io/queue-name: eidf107ns-user-queue # informatics-user-queue # eidf107ns-user-queue for eidf107 
+    kueue.x-k8s.io/queue-name: informatics-user-queue # eidf107ns-user-queue for eidf107 
     kueue.x-k8s.io/priority-class: batch-workload-priority
 spec:
   completions: 1
@@ -61,7 +61,7 @@ spec:
               echo "Running experiment with max_delta=$MAX_DELTA"
               mkdir -p /workspace/kubernets/results
               curl -o ffhq70k-paper256-ada.pkl "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl"
-              torchrun --nproc_per_node=4 \
+              torchrun --nproc_per_node=1 \
                       --nnodes=1 \
                       --node_rank=0 \
                       --master_addr=127.0.0.1 \
@@ -69,7 +69,7 @@ spec:
                       main.py train \
                       --stylegan2_url="https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
                       --batch_size=8 \
-                      --n_iterations=500000 \
+                      --n_iterations=10000 \
                       --num_eval_samples=1000 \
                       --num_conv_layers=7 \
                       --num_pool_layers=7 \
@@ -77,19 +77,19 @@ spec:
                       --lr_M_hat=2e-4 \
                       --lr_D=2e-4 \
                       --seed_key=2024 \
-                      --key_type "csprng" \
+                      --key_type="csprng" \
                       --max_delta=$MAX_DELTA \
-                      --mask_switch_on \
-                      --resume_checkpoint='/nfs-user/data/csprng/decoder_model_final_20250301122140388952.pth' \
+                      --mask_switch_off \
+                      --z_dependant_training \
                       --saving_path=results
               exit_status=$?
               echo "Python script finished with exit status $exit_status, sleeping indefinitely"
               sleep infinity
           resources:
             limits:
-              nvidia.com/gpu: "4"
-              cpu: "32"
-              memory: "128Gi"
+              nvidia.com/gpu: "1"
+              cpu: "4"
+              memory: "32Gi"
           volumeMounts:
             - name: workspace
               mountPath: /workspace/kubernets/results
