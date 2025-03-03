@@ -76,7 +76,8 @@ class FlexibleDecoder(nn.Module):
             self.features = nn.Sequential(*new_features)
             
             # More powerful classifier head
-            self.classifier = nn.Sequential(
+            # For LUPI, we need to separate the feature extraction part from the final classification
+            self.feature_extractor = nn.Sequential(
                 nn.AdaptiveAvgPool2d(1),
                 nn.Flatten(),
                 nn.BatchNorm1d(self.final_num_channels),
@@ -89,9 +90,10 @@ class FlexibleDecoder(nn.Module):
                 nn.BatchNorm1d(256),
                 nn.LeakyReLU(0.2),
                 nn.Dropout(0.5),
-                nn.Linear(256, num_classes),
-                # No softmax - raw logits for CrossEntropyLoss
             )
+            
+            # Final classification layer for standard path
+            self.final_classifier = nn.Linear(256, num_classes)
             
             # For LUPI: Add a separate branch that processes the privileged z information
             if self.use_privileged_info:
@@ -173,25 +175,24 @@ class FlexibleDecoder(nn.Module):
     def forward(self, x, z=None):
         x = self.features(x)
         
-        if self.z_dependant_mode and self.use_privileged_info and self.training and z is not None:
-            # During training with privileged information
-            image_features = x
-            image_features = self.classifier[:-1](image_features)  # Use all but the last layer
-            
-            # Process z through privileged branch
-            z_features = self.privileged_branch(z)
-            
-            # Concatenate features
-            combined_features = torch.cat([image_features, z_features], dim=1)
-            
-            # Final fusion layer
-            x = self.fusion(combined_features)
-            return x
-        elif self.z_dependant_mode and self.use_privileged_info and not self.training:
-            # During inference without privileged information
-            image_features = self.classifier(x)
-            return image_features
+        if self.z_dependant_mode:
+            if self.use_privileged_info and self.training and z is not None:
+                # During training with privileged information
+                image_features = self.feature_extractor(x)
+                
+                # Process z through privileged branch
+                z_features = self.privileged_branch(z)
+                
+                # Concatenate features
+                combined_features = torch.cat([image_features, z_features], dim=1)
+                
+                # Final fusion layer
+                return self.fusion(combined_features)
+            else:
+                # Standard path for inference or when not using privileged info
+                image_features = self.feature_extractor(x)
+                return self.final_classifier(image_features)
         else:
-            # Standard path (non-LUPI or when z not provided)
+            # Original binary classification
             x = self.classifier(x)
             return x
