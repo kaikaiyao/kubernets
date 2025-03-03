@@ -67,31 +67,50 @@ def create_z_classifier_model(latent_dim, num_classes, seed_key, device, key_typ
         def __init__(self, latent_dim, num_classes, seed_key):
             super().__init__()
             self.num_classes = num_classes
-            # Use a fixed projection matrix initialized with the seed
+            self.latent_dim = latent_dim
+            self.seed_key = seed_key
+            
+            # Create multiple projection matrices for more diversity
             torch.manual_seed(seed_key)
-            self.projection = nn.Parameter(torch.randn(latent_dim, 1))
-            self.projection.requires_grad = False
+            self.projection1 = nn.Parameter(torch.randn(latent_dim, 1))
+            self.projection2 = nn.Parameter(torch.randn(latent_dim, 1))
+            self.projection3 = nn.Parameter(torch.randn(latent_dim, 1))
+            
+            # Create class boundaries for more random distribution
+            self.class_weights = nn.Parameter(torch.randn(num_classes, latent_dim))
+            
+            # None of these parameters should be trained
+            self.projection1.requires_grad = False
+            self.projection2.requires_grad = False
+            self.projection3.requires_grad = False
+            self.class_weights.requires_grad = False
             
         def forward(self, z):
-            # Project the latent vectors to 1D values
-            projections = torch.matmul(z, self.projection).view(-1)
+            batch_size = z.shape[0]
             
-            # Map to classes based on value ranges
-            # This ensures an approximately uniform distribution across classes
-            batch_size = projections.shape[0]
-            logits = torch.zeros(batch_size, self.num_classes, device=projections.device)
+            # Approach 1: Multiple projections for more randomness
+            proj1 = torch.matmul(z, self.projection1).view(-1)
+            proj2 = torch.matmul(z, self.projection2).view(-1)
+            proj3 = torch.matmul(z, self.projection3).view(-1)
             
-            # Sort projections to determine rank order
-            sorted_indices = torch.argsort(projections)
+            # Combined projection with non-linear transformation
+            combined_proj = torch.sin(proj1) * torch.cos(proj2) + torch.cos(proj1) * torch.sin(proj3)
             
-            # Assign classes based on rank
-            for i, idx in enumerate(sorted_indices):
-                # Determine class based on position in sorted list
-                assigned_class = (i * self.num_classes) // batch_size
-                # Put a high value for the assigned class
-                logits[idx, assigned_class] = 10.0
-                
-            return logits
+            # Approach 2: Direct class scoring
+            # Calculate similarity to class prototypes
+            class_scores = torch.matmul(z, self.class_weights.t())
+            
+            # Final logits: combine both approaches
+            # This creates a semi-random but still diverse assignment
+            logits = class_scores + torch.sin(combined_proj.unsqueeze(1)) * 3.0
+            
+            # Add a small random noise based on the iteration to increase diversity
+            # Use a hash of the z tensor as random seed to ensure deterministic behavior
+            z_hash = hash(str(z.sum().item())) % 10000
+            torch.manual_seed(self.seed_key + z_hash)
+            noise = torch.randn_like(logits) * 0.5
+            
+            return logits + noise
     
     # Let's just use the fallback classifier directly - it's simpler and guaranteed to work
     model = SimpleDiverseClassifier(latent_dim, num_classes, seed_key)
