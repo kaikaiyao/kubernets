@@ -176,10 +176,17 @@ def train_model(
         # Forward pass
         if z_dependant_training:
             # FIRST PASS - Decoder training
-            # Repeat decoder training multiple times per iteration for faster learning
-            for _ in range(5):  # Train decoder 5x more than generator
+            # Create a fresh copy to use for multiple training iterations
+            with torch.no_grad():
+                x_M_hat_copy = x_M_hat_constrained.detach().clone()
+            
+            # Train decoder multiple times with fresh graphs each time
+            for train_iter in range(5):  # Train decoder 5x more than generator
+                # Create a fresh computation graph for each iteration
+                x_M_hat_for_decoder = x_M_hat_copy.clone()
+                
                 # Only use watermarked images for training in z-dependent mode
-                d_M_hat = decoder(x_M_hat_constrained)
+                d_M_hat = decoder(x_M_hat_for_decoder)
                 
                 # Compute loss using cross-entropy with z-derived classes
                 d_loss = criterion(d_M_hat, z_classes)
@@ -190,7 +197,7 @@ def train_model(
                     l2_reg += torch.norm(param)
                 d_loss += 1e-5 * l2_reg
                 
-                # Backward pass for decoder - complete this before starting watermarked model pass
+                # Backward pass for decoder
                 optimizer_D.zero_grad()
                 d_loss.backward()
                 
@@ -198,6 +205,10 @@ def train_model(
                 torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
                 
                 optimizer_D.step()
+                
+                # Log only the last iteration's loss
+                if train_iter == 4:
+                    d_loss_value = d_loss.item()
             
             # SECOND PASS - Watermarked model training
             # Create a completely fresh computation graph by detaching inputs
@@ -253,7 +264,11 @@ def train_model(
 
         # Record loss
         if rank == 0:
-            loss_history.append((d_loss.item(), m_hat_loss.item()))
+            if z_dependant_training:
+                # Use the saved d_loss_value from the last decoder training iteration
+                loss_history.append((d_loss_value, m_hat_loss.item()))
+            else:
+                loss_history.append((d_loss.item(), m_hat_loss.item()))
             
             if i % 50 == 0:
                 average_d_loss = sum(l[0] for l in loss_history[-50:]) / min(50, len(loss_history[-50:]))
