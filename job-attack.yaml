@@ -94,7 +94,7 @@ spec:
                           --image_attack_size 30 \
                           --num_steps_pgd 100 \
                           --attack_image_type "random_image" \
-                          --surrogate_decoder_model_path "/nfs-user/data/csprng/surrogate_decoder_20250302204432815911.pt,/nfs-user/data/csprng/surrogate_decoder_surrogate_decoder_20250302233552731694.pt,/nfs-user/data/csprng/surrogate_decoder_surrogate_decoder_20250303022342031511.pt,/nfs-user/data/csprng/surrogate_decoder_surrogate_decoder_20250303050300231509.pt,/nfs-user/data/csprng/surrogate_decoder_surrogate_decoder_20250303074810431841.pt" \
+                          --surrogate_decoder_model_path "/nfs-user/data/csprng/surrogate_decoder_20250302204432815911.pt,/nfs-user/data/csprng/surrogate_decoder_20250302233552731694.pt,/nfs-user/data/csprng/surrogate_decoder_20250303022342031511.pt,/nfs-user/data/csprng/surrogate_decoder_20250303050300231509.pt,/nfs-user/data/csprng/surrogate_decoder_20250303074810431841.pt" \
                           --alpha_values_pgd "0.0005,0.001,0.005"
 
                   exit_status=$?
