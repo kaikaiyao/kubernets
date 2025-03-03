@@ -80,7 +80,7 @@ spec:
                       --mask_switch_off \
                       --z_dependant_training \
                       --use_privileged_info \
-                      --num_classes=3 \
+                      --num_classes=10 \
                       --saving_path=results
               exit_status=$?
               echo "Python script finished with exit status $exit_status, sleeping indefinitely"
