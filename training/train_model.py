@@ -175,12 +175,18 @@ def train_model(
 
         # Forward pass
         if z_dependant_training:
-            # FIRST PASS - Decoder training
+            # When using LUPI, we need to be careful about multiple backward passes
             # Create a fresh copy to use for multiple training iterations
             with torch.no_grad():
                 x_M_hat_copy = x_M_hat_constrained.detach().clone()
             
+            # Initialize accumulated decoder gradients
+            optimizer_D.zero_grad()
+            
             # Train decoder multiple times with fresh graphs each time
+            # Use a single backward pass with accumulated loss to avoid DDP parameter reuse issues
+            accumulated_d_loss = 0
+            
             for train_iter in range(5):  # Train decoder 5x more than generator
                 # Create a fresh computation graph for each iteration
                 x_M_hat_for_decoder = x_M_hat_copy.clone()
@@ -201,18 +207,22 @@ def train_model(
                     l2_reg += torch.norm(param)
                 d_loss += 1e-5 * l2_reg
                 
-                # Backward pass for decoder
-                optimizer_D.zero_grad()
-                d_loss.backward()
+                # Accumulate loss instead of backward passes
+                accumulated_d_loss += d_loss
                 
-                # Gradient clipping to prevent exploding gradients
-                torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
-                
-                optimizer_D.step()
-                
-                # Log only the last iteration's loss
+                # Save loss value for logging
                 if train_iter == 4:
                     d_loss_value = d_loss.item()
+            
+            # Single backward pass with accumulated loss
+            accumulated_d_loss = accumulated_d_loss / 5  # Average the loss
+            accumulated_d_loss.backward()
+            
+            # Gradient clipping to prevent exploding gradients
+            torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
+            
+            # Update parameters with accumulated gradients
+            optimizer_D.step()
             
             # SECOND PASS - Watermarked model training
             # Create a completely fresh computation graph by detaching inputs
