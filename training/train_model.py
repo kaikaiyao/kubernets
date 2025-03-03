@@ -155,7 +155,15 @@ def train_model(
             
             # Train watermarked model to make its generated images
             # correctly classified by the decoder
-            m_hat_loss = -d_loss
+            # We need to create a fresh computation graph for the second backward pass
+            # to avoid in-place operation errors
+            with torch.no_grad():
+                # Detach to avoid in-place modification error
+                d_M_hat_clone = d_M_hat.detach().clone()
+                
+            # Run decoder again to create a fresh computational graph for the watermarked model
+            d_M_hat_for_watermark = decoder(x_M_hat_constrained)
+            m_hat_loss = -criterion(d_M_hat_for_watermark, z_classes)
         else:
             # Original binary classification approach
             d_M = decoder(x_M)
