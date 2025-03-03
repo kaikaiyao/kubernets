@@ -79,6 +79,9 @@ def train_model(
         if rank == 0:
             logging.info(f"Using cosine annealing LR schedule with warmup for z-dependent training")
 
+    # Enable anomaly detection to help identify the problem
+    torch.autograd.set_detect_anomaly(True)
+
     for i in range(start_iter, n_iterations):
         torch.cuda.empty_cache()
         gc.collect()
@@ -175,56 +178,44 @@ def train_model(
 
         # Forward pass
         if z_dependant_training:
-            # When using LUPI, we need to be careful about multiple backward passes
-            # Create a fresh copy to use for multiple training iterations
-            with torch.no_grad():
-                x_M_hat_copy = x_M_hat_constrained.detach().clone()
+            # Completely simplified approach - just one forward/backward pass
+            # with a higher learning rate to compensate
             
-            # Initialize optimizer for decoder
+            # Use a separate optimizer with higher learning rate for more intense training
+            decoder_lr = new_lr * 5  # 5x higher to compensate for single pass
+            optimizer_D = torch.optim.Adam(decoder.parameters(), lr=decoder_lr, weight_decay=1e-4)
+            
+            # Detach the watermarked image to ensure a fresh computation graph
+            x_M_hat_for_decoder = x_M_hat_constrained.detach().clone()
+            
+            # Zero out gradients
             optimizer_D.zero_grad()
             
-            # Store individual losses to avoid in-place operations
-            d_losses = []
+            # Forward pass with privileged information if supported
+            if hasattr(decoder.module, 'use_privileged_info') and decoder.module.use_privileged_info:
+                d_M_hat = decoder(x_M_hat_for_decoder, z)
+            else:
+                d_M_hat = decoder(x_M_hat_for_decoder)
             
-            # Train decoder multiple times with fresh copies each time
-            for train_iter in range(5):  # Train decoder 5x more than generator
-                # Create a fresh computation graph for each iteration
-                x_M_hat_for_decoder = x_M_hat_copy.detach().clone()
-                
-                # Only use watermarked images for training in z-dependent mode
-                # Pass z as privileged information if the decoder supports it
-                if hasattr(decoder.module, 'use_privileged_info') and decoder.module.use_privileged_info:
-                    d_M_hat = decoder(x_M_hat_for_decoder, z)
-                else:
-                    d_M_hat = decoder(x_M_hat_for_decoder)
-                
-                # Compute loss using cross-entropy with z-derived classes
-                d_loss = criterion(d_M_hat, z_classes)
-                
-                # Add L2 regularization directly
-                l2_reg = 0.0
-                for param in decoder.parameters():
-                    l2_reg += torch.norm(param)
-                d_loss = d_loss + 1e-5 * l2_reg  # Avoid in-place addition
-                
-                # Store each loss separately instead of accumulating in-place
-                d_losses.append(d_loss)
-                
-                # Save loss value for logging
-                if train_iter == 4:
-                    d_loss_value = d_loss.item()
+            # Compute loss using cross-entropy with z-derived classes
+            d_loss = criterion(d_M_hat, z_classes)
             
-            # Combine all losses without modifying the original tensors
-            # This creates a fresh computation graph connecting all losses
-            combined_d_loss = sum(d_losses) / len(d_losses)
+            # Add L2 regularization without in-place operations
+            l2_reg = 0.0
+            for param in decoder.parameters():
+                l2_reg = l2_reg + torch.norm(param)  # Avoid += to prevent in-place operations
+            d_loss = d_loss + 1e-5 * l2_reg  # Avoid += to prevent in-place operations
             
-            # Single backward pass with combined loss
-            combined_d_loss.backward()
+            # Get loss value for logging before backward
+            d_loss_value = d_loss.item()
+            
+            # Backward pass
+            d_loss.backward()
             
             # Gradient clipping to prevent exploding gradients
             torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
             
-            # Update parameters with accumulated gradients
+            # Update parameters
             optimizer_D.step()
             
             # SECOND PASS - Watermarked model training
