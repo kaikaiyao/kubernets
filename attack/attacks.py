@@ -576,6 +576,7 @@ def perform_pgd_attack(
     return k_attack_scores_mean, k_attack_scores_std
 
 def attack_label_based(
+    attack_type,
     gan_model,
     watermarked_model,
     decoder,
@@ -645,7 +646,17 @@ def attack_label_based(
         logging.info(f"Parameters: max_delta={max_delta}, lr_attack={lr_attack}, attack_steps={attack_steps}")
         logging.info(f"Lambda_lpips={lambda_lpips}, lambda_D={lambda_D}")
     
-    # Generate attack images
+    # If z_dependant_training is enabled but z_classifier is None, create one
+    if z_dependant_training and z_classifier is None:
+        from models.model_utils import create_z_classifier_model
+        logging.info("Creating z_classifier for attack as it was not provided")
+        z_classifier = create_z_classifier_model(
+            latent_dim=latent_dim, 
+            num_classes=num_classes, 
+            seed_key=seed_key, 
+            device=device
+        )
+    
     gan_model.eval()
     watermarked_model.eval()
     decoder.eval()

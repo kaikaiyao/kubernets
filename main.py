@@ -82,7 +82,11 @@ def main():
     parser.add_argument("--use_privileged_info", action="store_true", help="Enable LUPI (Learning Using Privileged Information) during training")
     parser.set_defaults(use_privileged_info=False)
 
+    # Load command-line arguments
     args = parser.parse_args()
+
+    # Initialize z_classifier to None by default
+    z_classifier = None
 
     # Distributed training setup
     if args.mode == "train":
