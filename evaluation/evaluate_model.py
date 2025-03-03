@@ -99,7 +99,9 @@ def evaluate_model(
         'lpips_values': [],
         'pixel_max_deltas': [],
         'plot_original_images': [],
-        'plot_watermarked_images': []
+        'plot_watermarked_images': [],
+        'labels': [],
+        'scores': []
     }
     
     num_batches = math.ceil(num_images / batch_size)
@@ -317,9 +319,29 @@ def process_watermark_detection(
         metrics['original_scores'].extend(orig_scores.cpu().numpy())
         metrics['watermarked_scores'].extend(water_scores.cpu().numpy())
         metrics['random_scores'].extend(rand_scores.cpu().numpy())
+        
+        # Generate labels and scores for ROC calculation
+        # For each image, we add two entries to the scores/labels arrays:
+        # 1. Watermarked image (should be detected as watermarked, label=1)
+        # 2. Original image (should be detected as not watermarked, label=0)
+        
+        # Initialize labels and scores arrays if they don't exist
+        if 'labels' not in metrics:
+            metrics['labels'] = []
+        if 'scores' not in metrics:
+            metrics['scores'] = []
+        
+        # Add batch data to labels and scores
+        # Labels: 1 for watermarked images, 0 for original images (not random)
+        metrics['labels'].extend([1] * batch_size)  # Watermarked images
+        metrics['labels'].extend([0] * batch_size)  # Original images (not random)
+        
+        # Scores: Detection confidence for each image
+        metrics['scores'].extend(water_scores.cpu().numpy())  # Scores for watermarked images
+        metrics['scores'].extend(orig_scores.cpu().numpy())   # Scores for original images (not random)
 
 def update_fid_metric(x_M, x_M_hat, fid_metric):
-    """Update FID metric with new images"""
+    """Update FID metric with new images (original vs. watermarked)"""
     x_M_normalized = ((x_M + 1) / 2 * 255).clamp(0, 255).to(torch.uint8)
     x_M_hat_normalized = ((x_M_hat + 1) / 2 * 255).clamp(0, 255).to(torch.uint8)
     fid_metric.update(x_M_normalized, real=True)
@@ -348,12 +370,12 @@ def calculate_final_metrics(metrics, fid_metric) -> dict:
     
     # Basic statistics
     score_stats = {
-        'original_mean': np.mean(metrics['original_scores']),
-        'original_std': np.std(metrics['original_scores']),
-        'watermarked_mean': np.mean(metrics['watermarked_scores']),
-        'watermarked_std': np.std(metrics['watermarked_scores']),
-        'random_mean': np.mean(metrics['random_scores']),
-        'random_std': np.std(metrics['random_scores'])
+        'original_mean': np.mean(metrics['original_scores']) if metrics['original_scores'] else 0,
+        'original_std': np.std(metrics['original_scores']) if metrics['original_scores'] else 0,
+        'watermarked_mean': np.mean(metrics['watermarked_scores']) if metrics['watermarked_scores'] else 0,
+        'watermarked_std': np.std(metrics['watermarked_scores']) if metrics['watermarked_scores'] else 0,
+        'random_mean': np.mean(metrics['random_scores']) if metrics['random_scores'] else 0,
+        'random_std': np.std(metrics['random_scores']) if metrics['random_scores'] else 0
     }
     
     logging.info(
@@ -363,18 +385,42 @@ def calculate_final_metrics(metrics, fid_metric) -> dict:
         f"  Random:      μ={score_stats['random_mean']:.4f} ±{score_stats['random_std']:.4f}"
     )
 
-    # ROC metrics
-    auc = roc_auc_score(metrics['labels'], metrics['scores'])
-    fpr, tpr, thresholds = roc_curve(metrics['labels'], metrics['scores'])
-    tpr_at_1_fpr = np.interp(0.01, fpr, tpr)
+    # ROC metrics (using Original vs. Watermarked images)
+    if len(metrics.get('labels', [])) > 0 and len(metrics.get('scores', [])) > 0:
+        if len(metrics['labels']) == len(metrics['scores']):
+            # Calculate ROC metrics
+            auc = roc_auc_score(metrics['labels'], metrics['scores'])
+            fpr, tpr, thresholds = roc_curve(metrics['labels'], metrics['scores'])
+            tpr_at_1_fpr = np.interp(0.01, fpr, tpr)
+            logging.info(f"ROC metrics calculated successfully (Original vs. Watermarked): AUC={auc:.4f}, TPR@1%FPR={tpr_at_1_fpr:.4f}")
+        else:
+            # Handle mismatched lengths
+            logging.error(f"Mismatched lengths: labels ({len(metrics['labels'])}) != scores ({len(metrics['scores'])})")
+            auc = 0.5  # Random classifier
+            tpr_at_1_fpr = 0.01  # Default poor performance
+    else:
+        # Handle empty metrics
+        logging.error("Empty labels or scores arrays, cannot calculate ROC metrics")
+        auc = 0.5  # Random classifier
+        tpr_at_1_fpr = 0.01  # Default poor performance
 
+    # Calculate mean LPIPS and max delta if available
+    mean_lpips = statistics.mean(metrics['lpips_values']) if metrics['lpips_values'] else 0
+    mean_max_delta = statistics.mean(metrics['pixel_max_deltas']) if metrics['pixel_max_deltas'] else 0
+    
+    # Calculate FID if available
+    try:
+        fid_score = float(fid_metric.compute())
+    except Exception as e:
+        logging.error(f"Error computing FID score: {e}")
+        fid_score = 0
+        
     return {
         'auc': auc,
         'tpr_at_1_fpr': tpr_at_1_fpr,
-        'mean_lpips': statistics.mean(metrics['lpips_values']),
-        'mean_max_delta': statistics.mean(metrics['pixel_max_deltas']),
-        'fid_score': fid_metric.compute(),
-        **score_stats
+        'mean_lpips': mean_lpips,
+        'mean_max_delta': mean_max_delta,
+        'fid_score': fid_score
     }
 
 def generate_plots(metrics: dict, auc: float, plotting: bool) -> None:
@@ -391,7 +437,7 @@ def generate_plots(metrics: dict, auc: float, plotting: bool) -> None:
     plt.plot(fpr, tpr, label=f"Watermark Detector (AUC = {auc:.3f})")
     plt.xlabel("False Positive Rate")
     plt.ylabel("True Positive Rate")
-    plt.title("ROC Curve")
+    plt.title("ROC Curve (Original vs. Watermarked)")
     plt.legend()
     plt.savefig("roc_curve.png")
     plt.close()
