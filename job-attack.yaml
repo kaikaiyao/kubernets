@@ -91,9 +91,10 @@ spec:
                           --initial_channels_surr 64 \
                           --max_delta 0.05 \
                           --train_size 2000 \
-                          --image_attack_size 100 \
+                          --image_attack_size 30 \
                           --num_steps_pgd 100 \
                           --attack_image_type "random_image" \
+                          --surrogate_decoder_model_path "/nfs-user/data/csprng/surrogate_decoder_20250302204432815911.pt" \
                           --alpha_values_pgd "0.0005,0.001,0.005"
 
                   exit_status=$?
