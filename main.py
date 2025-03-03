@@ -142,7 +142,8 @@ def main():
         decoder = torch.nn.parallel.DistributedDataParallel(
             decoder,
             device_ids=[args.local_rank],
-            output_device=args.local_rank
+            output_device=args.local_rank,
+            find_unused_parameters=True
         )
 
         # Optimizers
@@ -190,7 +191,8 @@ def main():
             decoder = torch.nn.parallel.DistributedDataParallel(
                 decoder,
                 device_ids=[args.local_rank],
-                output_device=args.local_rank
+                output_device=args.local_rank,
+                find_unused_parameters=True
             )
             
             # Switch to Adam with weight decay for better optimization
