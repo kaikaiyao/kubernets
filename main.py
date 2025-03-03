@@ -462,17 +462,18 @@ def main():
             logging.info(f"Using {len(surrogate_decoders)} pre-trained surrogate decoder(s).")
 
         attack_label_based(
-            args.attack_type,
-            gan_model,
-            watermarked_model,
-            decoder,
-            z_classifier,
-            surrogate_decoders,  # Now passing list of decoders
-            latent_dim,
-            device,
-            args.train_size,
-            args.image_attack_size,
+            attack_type=args.attack_type,
+            gan_model=gan_model,
+            watermarked_model=watermarked_model,
+            max_delta=args.max_delta,
+            decoder=decoder,
+            surrogate_decoders=surrogate_decoders,  # Now passing list of decoders
+            latent_dim=latent_dim,
+            device=device,
+            train_size=args.train_size,
+            image_attack_size=args.image_attack_size,
             batch_size=args.batch_size_surr,
+            epochs=1,
             attack_batch_size=args.attack_batch_size_pgd,
             num_steps=args.num_steps_pgd,
             alpha_values=args.alpha_values_pgd,
@@ -483,8 +484,6 @@ def main():
             momentum=args.momentum_pgd,
             attack_image_type=args.attack_image_type,
             key_type=args.key_type,
-            z_dependant_training=args.z_dependant_training,
-            num_classes=args.num_classes
         )
 
 
