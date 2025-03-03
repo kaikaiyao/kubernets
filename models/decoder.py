@@ -90,6 +90,11 @@ class FlexibleDecoder(nn.Module):
                 nn.BatchNorm1d(256),
                 nn.LeakyReLU(0.2),
                 nn.Dropout(0.5),
+                nn.Dropout(0.2),
+                nn.BatchNorm2d(128),
+                nn.Conv2d(128, 256, kernel_size=3, padding=1),
+                nn.LeakyReLU(0.2),
+                nn.BatchNorm2d(256),
             )
             
             # Final classification layer for standard path

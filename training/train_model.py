@@ -59,8 +59,8 @@ def train_model(
     loss_history = initial_loss_history if initial_loss_history is not None else []
     # Define loss function - either binary cross-entropy or cross-entropy based on mode
     if z_dependant_training:
-        # Use label smoothing for better learning signal
-        criterion = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
+        # Use stronger label smoothing for better generalization
+        criterion = torch.nn.CrossEntropyLoss(label_smoothing=0.05)
         if rank == 0:
             logging.info("Using CrossEntropyLoss with label smoothing for z-dependent training")
     else:
@@ -69,7 +69,7 @@ def train_model(
     # For z-dependent training, let's use a cyclical learning rate schedule
     if z_dependant_training:
         # Create learning rate schedulers
-        def cosine_annealing_with_warmup(step, total_steps, warmup_steps=500, min_lr=1e-6, max_lr=1e-2):
+        def cosine_annealing_with_warmup(step, total_steps, warmup_steps=500, min_lr=1e-6, max_lr=2e-2):
             # Warmup phase
             if step < warmup_steps:
                 return float(step) / float(max(1, warmup_steps)) * max_lr
