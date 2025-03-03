@@ -150,9 +150,6 @@ def main():
             find_unused_parameters=True
         )
 
-        # Set static graph to handle multiple backward passes
-        decoder._set_static_graph()
-
         # Optimizers
         optimizer_D = torch.optim.Adam(
             decoder.parameters(), 
@@ -201,9 +198,6 @@ def main():
                 output_device=args.local_rank,
                 find_unused_parameters=True
             )
-            
-            # Set static graph to handle multiple backward passes
-            decoder._set_static_graph()
             
             # Switch to Adam with weight decay for better optimization
             optimizer_D = torch.optim.Adam(

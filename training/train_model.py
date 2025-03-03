@@ -79,8 +79,8 @@ def train_model(
         if rank == 0:
             logging.info(f"Using cosine annealing LR schedule with warmup for z-dependent training")
 
-    # Enable anomaly detection to help identify the problem
-    torch.autograd.set_detect_anomaly(True)
+    # Disable anomaly detection - causes performance issues
+    # torch.autograd.set_detect_anomaly(True)
 
     for i in range(start_iter, n_iterations):
         torch.cuda.empty_cache()
@@ -178,17 +178,13 @@ def train_model(
 
         # Forward pass
         if z_dependant_training:
-            # Completely simplified approach - just one forward/backward pass
-            # with a higher learning rate to compensate
+            # Simpler approach - just run decoder training once with proper graph isolation
             
-            # Use a separate optimizer with higher learning rate for more intense training
-            decoder_lr = new_lr * 5  # 5x higher to compensate for single pass
-            optimizer_D = torch.optim.Adam(decoder.parameters(), lr=decoder_lr, weight_decay=1e-4)
+            # Detach the watermarked image to create a separate computation graph
+            with torch.no_grad():
+                x_M_hat_for_decoder = x_M_hat_constrained.detach().clone()
             
-            # Detach the watermarked image to ensure a fresh computation graph
-            x_M_hat_for_decoder = x_M_hat_constrained.detach().clone()
-            
-            # Zero out gradients
+            # First optimizer step on the original optimizer (not recreating it)
             optimizer_D.zero_grad()
             
             # Forward pass with privileged information if supported
@@ -197,26 +193,31 @@ def train_model(
             else:
                 d_M_hat = decoder(x_M_hat_for_decoder)
             
-            # Compute loss using cross-entropy with z-derived classes
+            # Compute loss without any in-place operations
             d_loss = criterion(d_M_hat, z_classes)
-            
-            # Add L2 regularization without in-place operations
-            l2_reg = 0.0
-            for param in decoder.parameters():
-                l2_reg = l2_reg + torch.norm(param)  # Avoid += to prevent in-place operations
-            d_loss = d_loss + 1e-5 * l2_reg  # Avoid += to prevent in-place operations
             
             # Get loss value for logging before backward
             d_loss_value = d_loss.item()
             
-            # Backward pass
+            # Backward pass and update
             d_loss.backward()
-            
-            # Gradient clipping to prevent exploding gradients
-            torch.nn.utils.clip_grad_norm_(decoder.parameters(), max_norm=1.0)
-            
-            # Update parameters
             optimizer_D.step()
+            
+            # Log class distribution for debugging
+            if i % 10 == 0 and rank == 0:
+                class_counts = torch.bincount(z_classes, minlength=num_classes)
+                logging.info(f"Z class distribution: {class_counts.tolist()}")
+                
+                # Log prediction distribution
+                if d_M_hat.shape[1] > 1:  # If using multi-class output
+                    pred_classes = torch.argmax(d_M_hat, dim=1)
+                    pred_counts = torch.bincount(pred_classes, minlength=num_classes)
+                    logging.info(f"Prediction distribution: {pred_counts.tolist()}")
+                    
+                    # Calculate accuracy
+                    correct = (pred_classes == z_classes).float().sum()
+                    accuracy = correct / z_classes.size(0)
+                    logging.info(f"Decoder accuracy: {accuracy:.4f}")
             
             # SECOND PASS - Watermarked model training
             # Create a completely fresh computation graph by detaching inputs
