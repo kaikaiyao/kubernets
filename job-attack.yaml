@@ -40,7 +40,7 @@ spec:
           - name: NCCL_IB_DISABLE
             value: "1"
           - name: NUM_RUNS
-            value: "1"
+            value: "10"
           command: ["/bin/bash", "-c"]
           args:
             - |
