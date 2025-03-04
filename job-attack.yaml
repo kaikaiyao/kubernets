@@ -92,7 +92,7 @@ spec:
                           --train_size 2000 \
                           --image_attack_size 50 \
                           --num_steps_pgd 100 \
-                          --attack_image_type "original_image" \
+                          --attack_image_type "random_image" \
                           --surrogate_decoder_model_path "/nfs-user/data/baseline/0.pt/nfs-user/data/baseline/1.pt,/nfs-user/data/baseline/2.pt,/nfs-user/data/baseline/3.pt,/nfs-user/data/baseline/4.pt,/nfs-user/data/baseline/5.pt,/nfs-user/data/baseline/6.pt,/nfs-user/data/baseline/7.pt,/nfs-user/data/baseline/8.pt,/nfs-user/data/baseline/9.pt" \
                           --alpha_values_pgd "0.0005,0.001,0.005"
 
