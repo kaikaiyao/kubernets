@@ -78,7 +78,7 @@ spec:
                       --key_type "csprng" \
                       --max_delta=0.05 \
                       --mask_switch_on \
-                      --resume_checkpoint='/nfs-user/data/csprng/decoder_model_final_20250301122140388952.pth' \
+                      --resume_checkpoint='/nfs-user/data/csprng/checkpoint_final_20250301122140388952.pt' \
                       --saving_path=results
               exit_status=$?
               echo "Python script finished with exit status $exit_status, sleeping indefinitely"
