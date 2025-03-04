@@ -40,7 +40,7 @@ spec:
           - name: NCCL_IB_DISABLE
             value: "1"
           - name: NUM_RUNS
-            value: "10"
+            value: "1"
           command: ["/bin/bash", "-c"]
           args:
             - |
@@ -78,11 +78,10 @@ spec:
                           --master_addr=127.0.0.1 \
                           --master_port=12345 \
                           main.py attack \
-                          --attack_type "base_secure" \
-                          --key_type "csprng" \
+                          --attack_type "base_baseline" \
                           --stylegan2_url "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
-                          --watermarked_model_path '/nfs-user/data/csprng/watermarked_model_final_20250301122140388952.pkl' \
-                          --decoder_model_path '/nfs-user/data/csprng/decoder_model_final_20250301122140388952.pth' \
+                          --watermarked_model_path '/nfs-user/data/baseline/watermarked_model_final_20250228163609622902.pkl' \
+                          --decoder_model_path '/nfs-user/data/baseline/decoder_model_final_20250228163609622902.pth' \
                           --num_conv_layers 7 \
                           --num_pool_layers 7 \
                           --initial_channels 64 \
@@ -91,10 +90,10 @@ spec:
                           --initial_channels_surr 64 \
                           --max_delta 0.05 \
                           --train_size 2000 \
-                          --image_attack_size 30 \
+                          --image_attack_size 50 \
                           --num_steps_pgd 100 \
-                          --attack_image_type "random_image" \
-                          --surrogate_decoder_model_path "/nfs-user/data/csprng/surrogate_decoder_20250302204432815911.pt,/nfs-user/data/csprng/surrogate_decoder_20250302233552731694.pt,/nfs-user/data/csprng/surrogate_decoder_20250303022342031511.pt,/nfs-user/data/csprng/surrogate_decoder_20250303050300231509.pt,/nfs-user/data/csprng/surrogate_decoder_20250303074810431841.pt" \
+                          --attack_image_type "original_image" \
+                          --surrogate_decoder_model_path "/nfs-user/data/baseline/3.pt,/nfs-user/data/baseline/4.pt,/nfs-user/data/baseline/5.pt,/nfs-user/data/baseline/6.pt,/nfs-user/data/baseline/7.pt" \
                           --alpha_values_pgd "0.0005,0.001,0.005"
 
                   exit_status=$?
@@ -129,5 +128,5 @@ spec:
       volumes:
         - name: nfs-user
           nfs:
-            server: $INFK8S_NFS_SERVER_IP
-            path: /user/$USER
+            server: 10.24.1.255 # This is $INFK8S_NFS_SERVER_IP
+            path: /user/s2470447-infk8s
