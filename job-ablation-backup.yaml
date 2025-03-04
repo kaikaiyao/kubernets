@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ${USER}-job-train
+  name: ${USER}-job-train-ablation-${INDEX}
   labels:
     eidf/user: ${USER}
     kueue.x-k8s.io/queue-name: ${QUEUE-NAME}
@@ -27,7 +27,9 @@ spec:
                   - key: nvidia.com/gpu.product
                     operator: In
                     values:
+                      - NVIDIA-H100-80GB-HBM3
                       - NVIDIA-A100-SXM4-40GB
+                      - NVIDIA-A100-SXM4-80GB
       # Add tolerations to allow scheduling on nodes with specific taints.
       tolerations:
         - key: "eidf098"
@@ -56,7 +58,7 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
-              echo "Running experiment"
+              echo "Running experiment with max_delta=$MAX_DELTA"
               mkdir -p /workspace/kubernets/results
               curl -o ffhq70k-paper256-ada.pkl "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl"
               torchrun --nproc_per_node=4 \
@@ -76,7 +78,7 @@ spec:
                       --lr_D=2e-4 \
                       --seed_key=2024 \
                       --key_type "csprng" \
-                      --max_delta=0.05 \
+                      --max_delta=$MAX_DELTA \
                       --mask_switch_on \
                       --resume_checkpoint='/nfs-user/data/csprng/decoder_model_final_20250301122140388952.pth' \
                       --saving_path=results
@@ -89,11 +91,16 @@ spec:
               cpu: "32"
               memory: "128Gi"
           volumeMounts:
+            - name: workspace
+              mountPath: /workspace/kubernets/results
             - name: nfs-user
               mountPath: /nfs-user
             - name: dshm  # For shared memory
               mountPath: /dev/shm
       volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: ${USER}-ws-${INDEX}
         - name: nfs-user
           nfs:
             server: 10.24.1.255 # This is $INFK8S_NFS_SERVER_IP
