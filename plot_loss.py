@@ -15,7 +15,7 @@ def parse_log_file(filename):
                     losses.append(float(match.group(1)))
     return np.array(losses)
 
-def smooth_losses(losses, window_size=1000):
+def smooth_losses(losses, window_size=100):
     # If we have fewer points than window_size, adjust window_size
     if len(losses) < window_size:
         window_size = max(1, len(losses) // 10)
