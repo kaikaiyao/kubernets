@@ -71,10 +71,10 @@ spec:
                         --master_addr=127.0.0.1 \
                         --master_port=12345 \
                         main.py eval \
-                        --num_eval_samples 100 \
+                        --num_eval_samples 1000 \
                         --stylegan2_url "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
-                        --watermarked_model_path '/nfs-user/data/csprng/watermarked_model_final_20250301122140388952.pkl' \
-                        --decoder_model_path '/nfs-user/data/csprng/decoder_model_final_20250301122140388952.pth' \
+                        --watermarked_model_path '/nfs-user/data/csprng/watermarked_model_final_20250304104237332664.pkl' \
+                        --decoder_model_path '/nfs-user/data/csprng/decoder_model_final_20250304104237332664.pth' \
                         --num_conv_layers 7 \
                         --num_pool_layers 7 \
                         --initial_channels 64 \
@@ -104,5 +104,5 @@ spec:
       volumes:
         - name: nfs-user
           nfs:
-            server: 10.24.1.255 # This is $INFK8S_NFS_SERVER_IP
-            path: /user/s2470447-infk8s
+            server: 10.24.6.77 # 10.24.1.255 for eidf029
+            path: /user/s2470447-eidf107 # /user/s2470447-infk8s for eidf029
