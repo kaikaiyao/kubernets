@@ -78,7 +78,7 @@ spec:
                       --key_type "csprng" \
                       --max_delta=0.05 \
                       --mask_switch_on \
-                      --resume_checkpoint='/nfs-user/data/csprng/checkpoint_final_20250301122140388952.pt' \
+                      --resume_checkpoint='/nfs-user/data/csprng/checkpoint_final_20250304104237332664.pt' \
                       --saving_path=results
               exit_status=$?
               echo "Python script finished with exit status $exit_status, sleeping indefinitely"
@@ -96,7 +96,7 @@ spec:
       volumes:
         - name: nfs-user
           nfs:
-            server: 10.24.1.255 # This is $INFK8S_NFS_SERVER_IP
+            server: 10.24.6.77 # 10.24.1.255 for eidf029
             path: /user/s2470447-infk8s
         - name: dshm
           emptyDir:
