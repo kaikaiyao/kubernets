@@ -22,12 +22,12 @@ def calculate_auc(mu_positive, std_positive, mu_attacked, std_attacked):
     return auc
 
 # Example usage:
-mu_positive = 0.7420
-std_positive = 0.0854
-mu_attacked = 0.6270
-std_attacked = 0.1100
+mu_positive = 0.9235
+std_positive = 0.1092
+mu_negative = 0.2080
+std_negative = 0.1788
 
-auc_estimate = calculate_auc(mu_positive, std_positive, mu_attacked, std_attacked)
+auc_estimate = calculate_auc(mu_positive, std_positive, mu_negative, std_negative)
 print(f"Estimated AUC: {auc_estimate:.3f}")
 
 import math
@@ -61,10 +61,10 @@ def tpr_at_fpr(mu_positive, std_positive, mu_negative, std_negative, target_fpr=
     return tpr, threshold
 
 # Example usage:
-mu_positive = 0.7420
-std_positive = 0.0854
-mu_negative = 0.6270  # attacked negative distribution
-std_negative = 0.1100
+mu_positive = 0.9235
+std_positive = 0.1092
+mu_negative = 0.2080
+std_negative = 0.1788
 target_fpr = 0.01   # 1% FPR
 
 tpr, threshold = tpr_at_fpr(mu_positive, std_positive, mu_negative, std_negative, target_fpr)
