@@ -80,8 +80,8 @@ spec:
                           main.py attack \
                           --attack_type "combined_secure" \
                           --stylegan2_url "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/paper-fig7c-training-set-sweeps/ffhq70k-paper256-ada.pkl" \
-                          --watermarked_model_path '/nfs-user/data/csprng/watermarked_model_final_20250301122140388952.pkl' \
-                          --decoder_model_path '/nfs-user/data/csprng/decoder_model_final_20250301122140388952.pth' \
+                          --watermarked_model_path '/nfs-user/data/csprng/watermarked_model_final_20250304104237332664.pkl' \
+                          --decoder_model_path '/nfs-user/data/csprng/decoder_model_final_20250304104237332664.pth' \
                           --num_conv_layers 7 \
                           --num_pool_layers 7 \
                           --initial_channels 64 \
@@ -94,8 +94,7 @@ spec:
                           --key_type "csprng" \
                           --image_attack_size 50 \
                           --num_steps_pgd 100 \
-                          --attack_image_type "blurred_image" \
-                          --surrogate_decoder_folder "/nfs-user/data/csprng/surr-combined-secure" \
+                          --attack_image_type "original_image" \
                           --alpha_values_pgd "0.0005,0.001,0.005"
 
                   exit_status=$?
@@ -121,14 +120,14 @@ spec:
               sleep infinity
           resources:
             limits:
-              nvidia.com/gpu: "1"
-              cpu: "8"
-              memory: "32Gi"
+              nvidia.com/gpu: "4"
+              cpu: "32"
+              memory: "128Gi"
           volumeMounts:
             - name: nfs-user
               mountPath: /nfs-user
       volumes:
         - name: nfs-user
           nfs:
-            server: 10.24.1.255 # This is $INFK8S_NFS_SERVER_IP
-            path: /user/s2470447-infk8s
+            server: 10.24.6.77 # 10.24.1.255 for eidf029
+            path: /user/s2470447-eidf107 # /user/s2470447-infk8s for eidf029
