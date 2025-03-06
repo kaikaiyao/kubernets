@@ -63,7 +63,7 @@ def main():
     parser.add_argument("--attack_image_type", type=str, default="original_image", choices=["original_image", "random_image", "blurred_image"], help="Type of images to use for attack")
     parser.add_argument("--train_size", type=int, default=100000, help="training set size for training surrogate decoder")
     parser.add_argument("--image_attack_size", type=int, default=10000, help="size of attack image set")
-    parser.add_argument("--surrogate_decoder_model_paths", type=str, help="Comma-separated list of paths to pre-trained surrogate decoder models")
+    parser.add_argument("--surrogate_decoder_folder", type=str, help="Path to a folder containing surrogate decoder models (files starting with 'surrogate_decoder_')")
     parser.add_argument("--batch_size_surr", type=int, default=16, help="Batch size for training the surrogate decoder")
     parser.add_argument("--num_steps_pgd", type=int, default=1000, help="Number of steps during the attack")
     parser.add_argument("--alpha_values_pgd", type=str, default="0.1,0.5,1.0", help="Alpha values for the attack (comma-separated list of floats)")
@@ -239,9 +239,19 @@ def main():
         local_path = args.stylegan2_url.split('/')[-1]
 
         # Check if pre-trained surrogate decoder paths are provided
-        if args.surrogate_decoder_model_paths is not None:
+        if args.surrogate_decoder_folder is not None:
             train_surrogate = False
-            surrogate_paths = args.surrogate_decoder_model_paths.split(',')
+            # Check if folder exists
+            if not os.path.exists(args.surrogate_decoder_folder):
+                raise ValueError(f"Surrogate decoder folder {args.surrogate_decoder_folder} does not exist")
+            
+            # Get all files starting with 'surrogate_decoder_'
+            surrogate_paths = [f for f in os.listdir(args.surrogate_decoder_folder) if f.startswith('surrogate_decoder_')]
+            
+            if not surrogate_paths:
+                logging.warning(f"No files starting with 'surrogate_decoder_' found in {args.surrogate_decoder_folder}")
+                train_surrogate = True
+                surrogate_paths = [None]  # Will create one surrogate decoder
         else:
             train_surrogate = True
             surrogate_paths = [None]  # Will create one surrogate decoder
@@ -327,8 +337,9 @@ def main():
 
             # Load pre-trained weights if provided
             if surrogate_path is not None:
-                logging.info(f"Loading pre-trained surrogate decoder from {surrogate_path}")
-                state_dict = torch.load(surrogate_path, map_location=device)
+                full_path = os.path.join(args.surrogate_decoder_folder, surrogate_path)
+                logging.info(f"Loading pre-trained surrogate decoder from {full_path}")
+                state_dict = torch.load(full_path, map_location=device)
                 # If DDP is active, load into the module
                 if train_surrogate:
                     surrogate_decoder.module.load_state_dict(state_dict)
