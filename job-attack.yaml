@@ -94,7 +94,7 @@ spec:
                           --key_type "csprng" \
                           --image_attack_size 50 \
                           --num_steps_pgd 100 \
-                          --attack_image_type "random_image" \
+                          --attack_image_type "blurred_image" \
                           --surrogate_decoder_folder "/nfs-user/data/csprng/surr-combined-secure" \
                           --alpha_values_pgd "0.0005,0.001,0.005"
 
