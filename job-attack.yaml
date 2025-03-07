@@ -125,8 +125,10 @@ spec:
               cpu: "32"
               memory: "128Gi"
           volumeMounts:
-            - name: nfs-user
-              mountPath: /nfs-user
+            - name: nfs-user-107
+              mountPath: /nfs-user-107
+            - name: nfs-user-029
+              mountPath: /nfs-user-029
       volumes:
         - name: nfs-user-107
           nfs:
