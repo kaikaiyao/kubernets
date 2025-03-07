@@ -94,10 +94,14 @@ spec:
             - name: dshm  # For shared memory
               mountPath: /dev/shm
       volumes:
-        - name: nfs-user
+        - name: nfs-user-107
           nfs:
-            server: 10.24.6.77 # 10.24.1.255 for eidf029
-            path: /user/s2470447-eidf107 # /user/s2470447-infk8s for eidf029
+            server: 10.24.6.77
+            path: /user/s2470447-eidf107
+        - name: nfs-user-029
+          nfs:
+            server: 10.24.1.255
+            path: /user/s2470447-infk8s
         - name: dshm
           emptyDir:
             medium: Memory
