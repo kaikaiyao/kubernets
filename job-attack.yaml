@@ -95,7 +95,7 @@ spec:
                           --image_attack_size 100 \
                           --num_steps_pgd 100 \
                           --surrogate_decoder_folder "/nfs-user-029/data/csprng/surr-base-secure-0305-checkpoint/" \
-                          --attack_image_type "random_image" \
+                          --attack_image_type "blurred_image" \
                           --alpha_values_pgd "0.0005,0.001,0.005,0.01,0.05,0.1,0.5"
 
                   exit_status=$?
