@@ -342,9 +342,25 @@ def main():
                 state_dict = torch.load(full_path, map_location=device)
                 # If DDP is active, load into the module
                 if train_surrogate:
-                    surrogate_decoder.module.load_state_dict(state_dict)
+                    # Remove 'module.' prefix from state dict keys if present
+                    from collections import OrderedDict
+                    new_state_dict = OrderedDict()
+                    for k, v in state_dict.items():
+                        if k.startswith('module.'):
+                            new_state_dict[k[7:]] = v  # Remove 'module.' prefix (7 characters)
+                        else:
+                            new_state_dict[k] = v
+                    surrogate_decoder.module.load_state_dict(new_state_dict)
                 else:
-                    surrogate_decoder.load_state_dict(state_dict)
+                    # Remove 'module.' prefix from state dict keys if present
+                    from collections import OrderedDict
+                    new_state_dict = OrderedDict()
+                    for k, v in state_dict.items():
+                        if k.startswith('module.'):
+                            new_state_dict[k[7:]] = v  # Remove 'module.' prefix (7 characters)
+                        else:
+                            new_state_dict[k] = v
+                    surrogate_decoder.load_state_dict(new_state_dict)
 
             surrogate_decoders.append(surrogate_decoder)
 
